@@ -155,6 +155,18 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  packages/ui:
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
 packages:
 
   '@alloc/quick-lru@5.2.0':
