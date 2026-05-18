@@ -1,0 +1,24 @@
+{
+  "name": "@meal-planner/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@meal-planner/domain": "workspace:*",
+    "@meal-planner/shared": "workspace:*",
+    "grammy": "^1.31.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.0"
+  }
+}
