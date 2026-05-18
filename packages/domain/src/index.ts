@@ -1,0 +1,5 @@
+export * as householdService from './services/household.service.js'
+export * as planService from './services/plan.service.js'
+export * as shoppingService from './services/shopping.service.js'
+export * as feedbackService from './services/feedback.service.js'
+export * as analyticsService from './services/analytics.service.js'
