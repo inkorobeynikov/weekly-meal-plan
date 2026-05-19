@@ -3,9 +3,26 @@ import {
   db,
   weeklyPlans,
   plannedMeals,
+  recipes,
   type WeeklyPlan,
   type PlannedMeal,
+  type NewRecipe,
 } from '@meal-planner/db'
+import {
+  openai,
+  MODELS,
+  WeeklyPlanSchema,
+  RecipeSchema,
+  zodResponseFormat,
+  buildSystemPrompt,
+  buildUserPrompt,
+  type Recipe as AIRecipe,
+  type PlannedMeal as AIPlannedMeal,
+  type WeeklyPlan as AIWeeklyPlan,
+  type PlanGenerationContext,
+} from '@meal-planner/ai'
+import * as householdService from './household.service.js'
+import * as feedbackService from './feedback.service.js'
 
 export interface GeneratePlanInput {
   householdId: string
@@ -17,16 +34,188 @@ export interface PlanWithMeals {
   meals: PlannedMeal[]
 }
 
-export async function generateWeeklyPlan(input: GeneratePlanInput): Promise<PlanWithMeals> {
-  // TODO: call @meal-planner/ai with household profile + family memory,
-  //       validate output via Zod, persist plan + meals (recipes upsert), return.
-  //       Allergies and hardRestrictions are HARD CONSTRAINTS — reject any plan
-  //       that violates them and retry the AI call.
-  throw new Error('Not implemented: generateWeeklyPlan')
+const MAX_AI_ATTEMPTS = 2
+
+// HARD CONSTRAINT: allergies and hardRestrictions must never appear in generated recipes.
+function findConstraintViolation(
+  recipe: AIRecipe,
+  forbidden: string[],
+): string | null {
+  const needles = forbidden
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0)
+  if (needles.length === 0) return null
+  const hay = [
+    recipe.title,
+    ...recipe.ingredients.map((i) => i.name),
+    ...recipe.steps,
+    ...recipe.substitutions.flatMap((s) => [s.original, s.substitute, s.note ?? '']),
+    recipe.allergenNotes ?? '',
+  ]
+    .join(' \n ')
+    .toLowerCase()
+  for (const needle of needles) {
+    if (hay.includes(needle)) return needle
+  }
+  return null
+}
+
+function assertNoForbidden(
+  meals: AIPlannedMeal[],
+  preferences: { allergies: string[]; hardRestrictions: string[] },
+): void {
+  const forbidden = [...preferences.allergies, ...preferences.hardRestrictions]
+  for (const meal of meals) {
+    const hit = findConstraintViolation(meal.recipe, forbidden)
+    if (hit !== null) {
+      throw new Error(
+        `HARD CONSTRAINT violated: recipe "${meal.recipe.title}" contains forbidden item "${hit}"`,
+      )
+    }
+  }
+}
+
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function recipeToNewRecipe(recipe: AIRecipe, householdId: string): NewRecipe {
+  return {
+    householdId,
+    title: recipe.title,
+    source: 'ai_generated',
+    servings: recipe.servings,
+    timeMinutes: recipe.timeMinutes,
+    difficulty: recipe.difficulty,
+    ingredientsJson: recipe.ingredients,
+    stepsJson: recipe.steps,
+    substitutionsJson: recipe.substitutions,
+    leftoversNotes: recipe.leftoversNotes ?? null,
+    storageNotes: recipe.storageNotes ?? null,
+    childFriendlyNotes: recipe.childFriendlyNotes ?? null,
+    allergenNotes: recipe.allergenNotes ?? null,
+    costLevel: recipe.costLevel,
+    validationStatus: 'valid',
+  }
+}
+
+async function callAIForWeeklyPlan(
+  context: PlanGenerationContext,
+): Promise<AIWeeklyPlan> {
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
+    try {
+      const completion = await openai.beta.chat.completions.parse({
+        model: MODELS.smart,
+        messages: [
+          { role: 'system', content: buildSystemPrompt() },
+          { role: 'user', content: buildUserPrompt(context) },
+        ],
+        response_format: zodResponseFormat(WeeklyPlanSchema, 'weekly_plan'),
+      })
+      const raw = completion.choices[0]?.message.parsed
+      if (!raw) throw new Error('AI returned no parsed content')
+      const plan = WeeklyPlanSchema.parse(raw)
+      // HARD CONSTRAINT: allergies and hardRestrictions must never appear in generated recipes.
+      assertNoForbidden(plan.meals, context.preferences)
+      return plan
+    } catch (err) {
+      lastError = err
+      if (attempt >= MAX_AI_ATTEMPTS) break
+    }
+  }
+  throw new Error(
+    `Failed to generate weekly plan after ${MAX_AI_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  )
+}
+
+export async function generateWeeklyPlan(
+  input: GeneratePlanInput,
+): Promise<PlanWithMeals> {
+  const household = await householdService.getHouseholdById(input.householdId)
+  if (!household) throw new Error(`Household ${input.householdId} not found`)
+
+  const [members, preferences, familyMemory] = await Promise.all([
+    householdService.listMembers(input.householdId),
+    householdService.getPreferences(input.householdId),
+    feedbackService.buildFamilyMemorySummary(input.householdId),
+  ])
+  if (!preferences) {
+    throw new Error(`Preferences not found for household ${input.householdId}`)
+  }
+
+  const context: PlanGenerationContext = {
+    householdName: household.name,
+    members: members.map((m) => ({
+      displayName: m.displayName,
+      ageGroup: m.approximateAgeGroup,
+      mealsAtHome: { dinner: m.mealsAtHome.dinner },
+    })),
+    preferences: {
+      likes: preferences.likes,
+      dislikes: preferences.dislikes,
+      hardRestrictions: preferences.hardRestrictions,
+      allergies: preferences.allergies,
+      preferredCuisines: preferences.preferredCuisines,
+      cookingTimeWeekdayMinutes: preferences.cookingTimeWeekdayMinutes,
+      budgetMode: preferences.budgetMode,
+      varietyMode: preferences.varietyMode,
+      stores: preferences.stores,
+    },
+    familyMemory: {
+      liked: familyMemory.liked,
+      disliked: familyMemory.disliked,
+      kidsRejected: familyMemory.kidsRejected,
+      favorites: familyMemory.favorites,
+      goodForLeftovers: familyMemory.goodForLeftovers,
+    },
+    weekStartDate: input.weekStartDate,
+  }
+
+  const aiPlan = await callAIForWeeklyPlan(context)
+
+  const [planRow] = await db
+    .insert(weeklyPlans)
+    .values({
+      householdId: input.householdId,
+      weekStartDate: input.weekStartDate,
+      status: 'draft',
+      aiReasoningSummary: aiPlan.reasoningSummary,
+    })
+    .returning()
+  if (!planRow) throw new Error('Failed to insert weekly_plans row')
+
+  const insertedMeals: PlannedMeal[] = []
+  for (const meal of aiPlan.meals) {
+    const [recipeRow] = await db
+      .insert(recipes)
+      .values(recipeToNewRecipe(meal.recipe, input.householdId))
+      .returning()
+    if (!recipeRow) throw new Error('Failed to insert recipe row')
+
+    const [mealRow] = await db
+      .insert(plannedMeals)
+      .values({
+        weeklyPlanId: planRow.id,
+        date: addDays(input.weekStartDate, meal.dayOffset),
+        mealType: meal.mealType,
+        recipeId: recipeRow.id,
+        leftoversPlanned: meal.leftoversPlanned,
+        servings: meal.recipe.servings,
+      })
+      .returning()
+    if (!mealRow) throw new Error('Failed to insert planned_meal row')
+    insertedMeals.push(mealRow)
+  }
+
+  return { plan: planRow, meals: insertedMeals }
 }
 
 export async function approvePlan(planId: string): Promise<WeeklyPlan> {
-  // TODO: set status='approved', approvedAt=now(). Trigger shopping list build downstream.
   const [row] = await db
     .update(weeklyPlans)
     .set({ status: 'approved', approvedAt: new Date() })
@@ -41,13 +230,154 @@ export interface ReplaceMealInput {
   reason?: string
 }
 
-export async function replaceMeal(_input: ReplaceMealInput): Promise<PlannedMeal> {
-  // TODO: call AI for a single replacement recipe; respect same constraints.
-  throw new Error('Not implemented: replaceMeal')
+async function callAIForSingleRecipe(
+  context: PlanGenerationContext,
+  reason: string | undefined,
+  previousTitle: string,
+  mealType: string,
+  dayOffset: number,
+): Promise<AIRecipe> {
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
+    try {
+      const replaceInstructions = [
+        `Replace a single meal in an existing weekly plan.`,
+        `Previous recipe title (do NOT repeat or closely resemble): ${previousTitle}`,
+        `Meal type: ${mealType}; dayOffset in the week: ${dayOffset}`,
+        reason ? `Reason for replacement: ${reason}` : 'Reason for replacement: (none specified)',
+        '',
+        'Return exactly one Recipe matching the Recipe JSON schema.',
+      ].join('\n')
+
+      const completion = await openai.beta.chat.completions.parse({
+        model: MODELS.smart,
+        messages: [
+          { role: 'system', content: buildSystemPrompt() },
+          { role: 'user', content: buildUserPrompt(context) },
+          { role: 'user', content: replaceInstructions },
+        ],
+        response_format: zodResponseFormat(RecipeSchema, 'recipe'),
+      })
+      const raw = completion.choices[0]?.message.parsed
+      if (!raw) throw new Error('AI returned no parsed content')
+      const recipe = RecipeSchema.parse(raw)
+      // HARD CONSTRAINT: allergies and hardRestrictions must never appear in generated recipes.
+      const forbidden = [
+        ...context.preferences.allergies,
+        ...context.preferences.hardRestrictions,
+      ]
+      const hit = findConstraintViolation(recipe, forbidden)
+      if (hit !== null) {
+        throw new Error(
+          `HARD CONSTRAINT violated: replacement recipe contains forbidden item "${hit}"`,
+        )
+      }
+      return recipe
+    } catch (err) {
+      lastError = err
+      if (attempt >= MAX_AI_ATTEMPTS) break
+    }
+  }
+  throw new Error(
+    `Failed to generate replacement recipe after ${MAX_AI_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  )
+}
+
+export async function replaceMeal(input: ReplaceMealInput): Promise<PlannedMeal> {
+  const [existingMeal] = await db
+    .select()
+    .from(plannedMeals)
+    .where(eq(plannedMeals.id, input.plannedMealId))
+    .limit(1)
+  if (!existingMeal) throw new Error(`Planned meal ${input.plannedMealId} not found`)
+
+  const [previousRecipe] = await db
+    .select()
+    .from(recipes)
+    .where(eq(recipes.id, existingMeal.recipeId))
+    .limit(1)
+  if (!previousRecipe) throw new Error(`Recipe ${existingMeal.recipeId} not found`)
+
+  const [plan] = await db
+    .select()
+    .from(weeklyPlans)
+    .where(eq(weeklyPlans.id, existingMeal.weeklyPlanId))
+    .limit(1)
+  if (!plan) throw new Error(`Plan ${existingMeal.weeklyPlanId} not found`)
+
+  const household = await householdService.getHouseholdById(plan.householdId)
+  if (!household) throw new Error(`Household ${plan.householdId} not found`)
+
+  const [members, preferences, familyMemory] = await Promise.all([
+    householdService.listMembers(plan.householdId),
+    householdService.getPreferences(plan.householdId),
+    feedbackService.buildFamilyMemorySummary(plan.householdId),
+  ])
+  if (!preferences) {
+    throw new Error(`Preferences not found for household ${plan.householdId}`)
+  }
+
+  const weekStart = String(plan.weekStartDate)
+  const mealDate = String(existingMeal.date)
+  const dayOffset = Math.round(
+    (Date.parse(`${mealDate}T00:00:00Z`) - Date.parse(`${weekStart}T00:00:00Z`)) /
+      (1000 * 60 * 60 * 24),
+  )
+
+  const context: PlanGenerationContext = {
+    householdName: household.name,
+    members: members.map((m) => ({
+      displayName: m.displayName,
+      ageGroup: m.approximateAgeGroup,
+      mealsAtHome: { dinner: m.mealsAtHome.dinner },
+    })),
+    preferences: {
+      likes: preferences.likes,
+      dislikes: preferences.dislikes,
+      hardRestrictions: preferences.hardRestrictions,
+      allergies: preferences.allergies,
+      preferredCuisines: preferences.preferredCuisines,
+      cookingTimeWeekdayMinutes: preferences.cookingTimeWeekdayMinutes,
+      budgetMode: preferences.budgetMode,
+      varietyMode: preferences.varietyMode,
+      stores: preferences.stores,
+    },
+    familyMemory: {
+      liked: familyMemory.liked,
+      disliked: familyMemory.disliked,
+      kidsRejected: familyMemory.kidsRejected,
+      favorites: familyMemory.favorites,
+      goodForLeftovers: familyMemory.goodForLeftovers,
+    },
+    weekStartDate: weekStart,
+  }
+
+  const newRecipe = await callAIForSingleRecipe(
+    context,
+    input.reason,
+    previousRecipe.title,
+    existingMeal.mealType,
+    dayOffset,
+  )
+
+  const [recipeRow] = await db
+    .insert(recipes)
+    .values(recipeToNewRecipe(newRecipe, plan.householdId))
+    .returning()
+  if (!recipeRow) throw new Error('Failed to insert replacement recipe row')
+
+  const [updatedMeal] = await db
+    .update(plannedMeals)
+    .set({ recipeId: recipeRow.id, servings: newRecipe.servings })
+    .where(eq(plannedMeals.id, existingMeal.id))
+    .returning()
+  if (!updatedMeal) throw new Error('Failed to update planned_meal row')
+  return updatedMeal
 }
 
 export async function getPlanWithMeals(planId: string): Promise<PlanWithMeals | null> {
-  // TODO
   const [plan] = await db
     .select()
     .from(weeklyPlans)
@@ -64,7 +394,6 @@ export async function getPlanWithMeals(planId: string): Promise<PlanWithMeals | 
 export async function getCurrentApprovedPlan(
   householdId: string,
 ): Promise<WeeklyPlan | null> {
-  // TODO: return the most recent approved plan for this household
   const [row] = await db
     .select()
     .from(weeklyPlans)
