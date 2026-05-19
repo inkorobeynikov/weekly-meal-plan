@@ -27,8 +27,10 @@
 - [ ] Web UI: W03 Shopping List, W08 Shopping Checked
 
 ## Phase 6 — Bot
-- [ ] Bot onboarding
-- [ ] Plan delivery via Telegram
+- [x] Bot onboarding (full conversation flow, Polish)
+- [x] Plan delivery via Telegram (/plan + inline "generate plan" callback)
+- [x] /shopping command — grouped list + deep link to web app
+- [x] Webhook handler in Next.js (`/api/telegram/webhook`)
 
 ## Phase 7 — Feedback + memory
 - [ ] Dish feedback capture
