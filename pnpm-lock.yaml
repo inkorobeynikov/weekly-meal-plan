@@ -20,6 +20,9 @@ importers:
 
   apps/bot:
     dependencies:
+      '@meal-planner/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@meal-planner/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -29,6 +32,9 @@ importers:
       grammy:
         specifier: ^1.31.0
         version: 1.43.0
+      inngest:
+        specifier: ^3.27.0
+        version: 3.54.2(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(next@16.2.6(@opentelemetry/api@1.9.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(typescript@5.9.3)(zod@3.25.76)
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -45,6 +51,9 @@ importers:
       '@meal-planner/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@meal-planner/bot':
+        specifier: workspace:*
+        version: link:../bot
       '@meal-planner/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -57,6 +66,9 @@ importers:
       '@meal-planner/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      grammy:
+        specifier: ^1.31.0
+        version: 1.43.0
       inngest:
         specifier: ^3.27.0
         version: 3.54.2(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(next@16.2.6(@opentelemetry/api@1.9.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(typescript@5.9.3)(zod@3.25.76)

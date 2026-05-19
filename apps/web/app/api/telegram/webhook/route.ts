@@ -1,7 +1,4 @@
-import type { NextRequest } from 'next/server'
+import { webhookCallback } from 'grammy'
+import { getBot } from '@meal-planner/bot/bot'
 
-export async function POST(_req: NextRequest): Promise<Response> {
-  // TODO: wire grammY webhook adapter (webhookCallback(bot, 'std/http'))
-  // and authenticate using the Telegram secret token header.
-  return new Response('ok', { status: 200 })
-}
+export const POST = webhookCallback(getBot(), 'std/http')
