@@ -22,10 +22,11 @@
 - [ ] Phase 4d: Web onboarding flow (W06)
 
 ## Phase 5 — Shopping list
-- [ ] `shoppingService.buildShoppingList` (only runs once plan is approved)
+- [x] `shoppingService.generateShoppingList` (only runs once plan is approved)
 - [ ] Promotion-fact lookups (Biedronka/Lidl/Kaufland)
 - [x] Web UI: W03 Shopping List
 - [ ] Web UI: W08 Shopping Checked
+- [x] Inngest job `meal-planner/shopping.generate` (triggered on plan approve)
 
 ## Phase 6 — Bot
 - [x] Bot onboarding (full conversation flow, Polish)
