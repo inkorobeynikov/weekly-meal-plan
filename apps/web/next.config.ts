@@ -7,6 +7,7 @@ const config: NextConfig = {
     '@meal-planner/db',
     '@meal-planner/domain',
     '@meal-planner/shared',
+    '@meal-planner/ui',
   ],
 }
 
