@@ -18,13 +18,14 @@
 ## Phase 4 — Web + auth
 - [x] Phase 4a: Telegram `initData` verification + JWT middleware (`withAuth`, `/api/auth/telegram`, `api-client`)
 - [x] Phase 4b: W04 Plan Review + W01 Weekly Plan screens (plans API routes, draft review with swap/approve/regenerate, approved view)
-- [ ] Phase 4c: Web onboarding flow (W06)
-- [ ] Phase 4d: Recipe detail view (W02)
+- [x] Phase 4c: W02 Recipe Detail + W03 Shopping List + W05 Family Preferences screens
+- [ ] Phase 4d: Web onboarding flow (W06)
 
 ## Phase 5 — Shopping list
 - [ ] `shoppingService.buildShoppingList` (only runs once plan is approved)
 - [ ] Promotion-fact lookups (Biedronka/Lidl/Kaufland)
-- [ ] Web UI: W03 Shopping List, W08 Shopping Checked
+- [x] Web UI: W03 Shopping List
+- [ ] Web UI: W08 Shopping Checked
 
 ## Phase 6 — Bot
 - [ ] Bot onboarding
