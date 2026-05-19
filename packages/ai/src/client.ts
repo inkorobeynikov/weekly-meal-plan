@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { zodResponseFormat } from 'openai/helpers/zod'
 
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -10,3 +11,5 @@ export const MODELS = {
 } as const
 
 export type ModelTier = keyof typeof MODELS
+
+export { zodResponseFormat }
