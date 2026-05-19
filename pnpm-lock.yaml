@@ -63,6 +63,9 @@ importers:
       '@meal-planner/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@meal-planner/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       grammy:
         specifier: ^1.31.0
         version: 1.43.0
