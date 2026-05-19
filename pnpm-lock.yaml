@@ -54,6 +54,9 @@ importers:
       '@meal-planner/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@meal-planner/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       inngest:
         specifier: ^3.27.0
         version: 3.54.2(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(next@16.2.6(@opentelemetry/api@1.9.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(typescript@5.9.3)(zod@3.25.76)

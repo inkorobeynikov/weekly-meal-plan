@@ -1,34 +1,45 @@
-import Link from 'next/link'
+'use client'
 
-const TABS = [
-  { href: '/plan', label: 'Plan' },
-  { href: '/shopping', label: 'Zakupy' },
-  { href: '/recipes', label: 'Przepisy' },
-  { href: '/family', label: 'Rodzina' },
-] as const
+import { usePathname, useRouter } from 'next/navigation'
+import { TabBar, type TabId } from '@meal-planner/ui'
+
+const TAB_PATHS: Record<TabId, string> = {
+  plan: '/plan',
+  shopping: '/shopping',
+  recipes: '/recipes',
+  family: '/family',
+}
+
+function pathnameToTab(pathname: string): TabId {
+  if (pathname.startsWith('/shopping')) return 'shopping'
+  if (pathname.startsWith('/recipes')) return 'recipes'
+  if (pathname.startsWith('/family')) return 'family'
+  return 'plan'
+}
 
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }): React.JSX.Element {
+  const pathname = usePathname()
+  const router = useRouter()
+  const active = pathnameToTab(pathname ?? '/plan')
+
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex-1 px-4 py-4 pb-20">{children}</main>
-      <nav className="fixed inset-x-0 bottom-0 border-t bg-white/95 backdrop-blur dark:bg-black/95">
-        <ul className="mx-auto grid max-w-md grid-cols-4">
-          {TABS.map((tab) => (
-            <li key={tab.href}>
-              <Link
-                href={tab.href}
-                className="flex items-center justify-center px-2 py-3 text-sm"
-              >
-                {tab.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+    <div
+      style={{
+        position: 'relative',
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#FBF7F1',
+      }}
+    >
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 84 }}>
+        {children}
+      </div>
+      <TabBar active={active} onSelect={(id) => router.push(TAB_PATHS[id])} />
     </div>
   )
 }
