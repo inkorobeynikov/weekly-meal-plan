@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import {
   db,
   weeklyPlans,
@@ -6,6 +6,7 @@ import {
   recipes,
   type WeeklyPlan,
   type PlannedMeal,
+  type Recipe,
   type NewRecipe,
 } from '@meal-planner/db'
 import {
@@ -400,6 +401,74 @@ export async function getCurrentApprovedPlan(
     .where(
       and(eq(weeklyPlans.householdId, householdId), eq(weeklyPlans.status, 'approved')),
     )
+    .orderBy(desc(weeklyPlans.weekStartDate))
     .limit(1)
   return row ?? null
+}
+
+export async function getLatestDraftPlan(
+  householdId: string,
+): Promise<WeeklyPlan | null> {
+  const [row] = await db
+    .select()
+    .from(weeklyPlans)
+    .where(
+      and(eq(weeklyPlans.householdId, householdId), eq(weeklyPlans.status, 'draft')),
+    )
+    .orderBy(desc(weeklyPlans.createdAt))
+    .limit(1)
+  return row ?? null
+}
+
+export interface MealWithRecipe {
+  meal: PlannedMeal
+  recipe: Recipe
+}
+
+export interface PlanWithMealsAndRecipes {
+  plan: WeeklyPlan
+  meals: MealWithRecipe[]
+}
+
+export async function getPlanWithMealsAndRecipes(
+  planId: string,
+): Promise<PlanWithMealsAndRecipes | null> {
+  const [plan] = await db
+    .select()
+    .from(weeklyPlans)
+    .where(eq(weeklyPlans.id, planId))
+    .limit(1)
+  if (!plan) return null
+
+  const meals = await db
+    .select()
+    .from(plannedMeals)
+    .where(eq(plannedMeals.weeklyPlanId, planId))
+  if (meals.length === 0) return { plan, meals: [] }
+
+  const recipeIds = meals.map((m) => m.recipeId)
+  const recipeRows = await db
+    .select()
+    .from(recipes)
+    .where(inArray(recipes.id, recipeIds))
+  const recipeMap = new Map(recipeRows.map((r) => [r.id, r]))
+
+  const joined: MealWithRecipe[] = []
+  for (const meal of meals) {
+    const recipe = recipeMap.get(meal.recipeId)
+    if (!recipe) throw new Error(`Recipe ${meal.recipeId} not found for meal ${meal.id}`)
+    joined.push({ meal, recipe })
+  }
+  joined.sort((a, b) => String(a.meal.date).localeCompare(String(b.meal.date)))
+  return { plan, meals: joined }
+}
+
+export async function getCurrentPlanForHousehold(
+  householdId: string,
+): Promise<PlanWithMealsAndRecipes | null> {
+  const approved = await getCurrentApprovedPlan(householdId)
+  if (approved) return getPlanWithMealsAndRecipes(approved.id)
+  const draft = await getLatestDraftPlan(householdId)
+  if (draft) return getPlanWithMealsAndRecipes(draft.id)
+  return null
 }
