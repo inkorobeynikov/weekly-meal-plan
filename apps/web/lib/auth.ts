@@ -1,12 +1,21 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose'
 
-export interface TelegramUser {
+export interface TelegramInitUser {
   id: number
   first_name: string
   last_name?: string
   username?: string
   language_code?: string
 }
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AuthError'
+  }
+}
+
+const MAX_INIT_DATA_AGE_SECONDS = 24 * 60 * 60
 
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET
@@ -47,14 +56,23 @@ function toHex(buf: ArrayBuffer): string {
   return hex
 }
 
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 /**
  * Verify Telegram Mini App `initData` query string per the documented HMAC scheme.
  * https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
  */
-export async function verifyTelegramInitData(initData: string): Promise<TelegramUser> {
+export async function verifyTelegramInitData(initData: string): Promise<TelegramInitUser> {
   const params = new URLSearchParams(initData)
   const hash = params.get('hash')
-  if (!hash) throw new Error('initData missing hash')
+  if (!hash) throw new AuthError('initData missing hash')
   params.delete('hash')
 
   const dataCheckString = [...params.entries()]
@@ -67,15 +85,29 @@ export async function verifyTelegramInitData(initData: string): Promise<Telegram
     getBotToken(),
   )
   const computed = toHex(await hmacSha256(secretKey, dataCheckString))
-  if (computed !== hash) throw new Error('initData hash mismatch')
+  if (!timingSafeEqualHex(computed, hash)) {
+    throw new AuthError('initData hash mismatch')
+  }
+
+  const authDateStr = params.get('auth_date')
+  if (!authDateStr) throw new AuthError('initData missing auth_date')
+  const authDate = Number(authDateStr)
+  if (!Number.isFinite(authDate)) throw new AuthError('initData has invalid auth_date')
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  if (nowSeconds - authDate > MAX_INIT_DATA_AGE_SECONDS) {
+    throw new AuthError('initData expired')
+  }
 
   const userJson = params.get('user')
-  if (!userJson) throw new Error('initData missing user')
-  return JSON.parse(userJson) as TelegramUser
+  if (!userJson) throw new AuthError('initData missing user')
+  try {
+    return JSON.parse(userJson) as TelegramInitUser
+  } catch {
+    throw new AuthError('initData user payload is not valid JSON')
+  }
 }
 
-export async function signJwt(payload: JWTPayload): Promise<string> {
-  const expiresIn = process.env.JWT_EXPIRES_IN ?? '30d'
+export async function signJwt(payload: JWTPayload, expiresIn: string = '7d'): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -84,6 +116,10 @@ export async function signJwt(payload: JWTPayload): Promise<string> {
 }
 
 export async function verifyJwt(token: string): Promise<JWTPayload> {
-  const { payload } = await jwtVerify(token, getJwtSecret())
-  return payload
+  try {
+    const { payload } = await jwtVerify(token, getJwtSecret())
+    return payload
+  } catch (err) {
+    throw new AuthError(err instanceof Error ? err.message : 'Invalid token')
+  }
 }

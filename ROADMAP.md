@@ -15,7 +15,21 @@
 - [x] `planService.replaceMeal` — AI replacement for a single meal with the same HARD-CONSTRAINT guard
 - [x] Inngest job `meal-planner/plan.generate` wired in `apps/web/app/api/inngest`
 
-## Phase 4 — Shopping list (next)
+## Phase 4 — Web + auth
+- [x] Phase 4a: Telegram `initData` verification + JWT middleware (`withAuth`, `/api/auth/telegram`, `api-client`)
+- [ ] Phase 4b: Web onboarding flow (W06)
+- [ ] Phase 4c: Weekly plan view (W01)
+- [ ] Phase 4d: Recipe detail view (W02)
+
+## Phase 5 — Shopping list
 - [ ] `shoppingService.buildShoppingList` (only runs once plan is approved)
 - [ ] Promotion-fact lookups (Biedronka/Lidl/Kaufland)
 - [ ] Web UI: W03 Shopping List, W08 Shopping Checked
+
+## Phase 6 — Bot
+- [ ] Bot onboarding
+- [ ] Plan delivery via Telegram
+
+## Phase 7 — Feedback + memory
+- [ ] Dish feedback capture
+- [ ] Family memory summary for plan prompts
