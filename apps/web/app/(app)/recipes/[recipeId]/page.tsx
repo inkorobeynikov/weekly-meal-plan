@@ -40,7 +40,8 @@ export default function RecipeDetailPage({
   const { recipeId } = use(params)
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [reaction, setReaction] = useState<'liked' | 'dont_repeat' | null>(null)
+  const [reaction, setReaction] = useState<Reaction | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
   const [reactionPending, setReactionPending] = useState(false)
 
   useEffect(() => {
@@ -59,9 +60,10 @@ export default function RecipeDetailPage({
     }
   }, [recipeId])
 
-  async function react(value: 'liked' | 'dont_repeat'): Promise<void> {
+  async function react(value: Reaction): Promise<void> {
     setReactionPending(true)
-    setReaction(value)
+    setReaction(value) // optimistic — reflect the choice immediately
+    setShowPicker(false)
     try {
       await post(`/api/feedback`, { recipeId, reaction: value })
     } catch {
@@ -70,6 +72,8 @@ export default function RecipeDetailPage({
       setReactionPending(false)
     }
   }
+
+  const isNegative = reaction !== null && reaction !== 'liked'
 
   if (error) {
     return (
@@ -243,18 +247,50 @@ export default function RecipeDetailPage({
           Smaczne
         </Button>
         <Button
-          variant={reaction === 'dont_repeat' ? 'primary' : 'ghost'}
+          variant={isNegative ? 'primary' : 'ghost'}
           icon={<IconHeart />}
-          onClick={() => react('dont_repeat')}
+          onClick={() => setShowPicker((v) => !v)}
           full
           style={{ opacity: reactionPending ? 0.7 : 1 }}
         >
-          Nie powtarzać
+          Nie smakowało
         </Button>
       </div>
+
+      {showPicker ? (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {NEGATIVE_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={reaction === opt.value ? 'primary' : 'ghost'}
+              onClick={() => react(opt.value)}
+              full
+              style={{ opacity: reactionPending ? 0.7 : 1 }}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
     </Body>
   )
 }
+
+type Reaction = 'liked' | 'dont_repeat' | 'kids_didnt_eat' | 'too_long' | 'too_expensive'
+
+const NEGATIVE_OPTIONS: ReadonlyArray<{ value: Reaction; label: string }> = [
+  { value: 'dont_repeat', label: 'Nie powtarzaj' },
+  { value: 'kids_didnt_eat', label: 'Dzieci nie jadły' },
+  { value: 'too_long', label: 'Za długo' },
+  { value: 'too_expensive', label: 'Za drogo' },
+]
 
 function Section({
   title,
