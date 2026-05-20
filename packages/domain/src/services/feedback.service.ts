@@ -12,10 +12,15 @@ import {
   type Recipe,
 } from '@meal-planner/db'
 import type { FeedbackReaction } from '@meal-planner/shared'
+import * as analyticsService from './analytics.service.js'
 
 export async function submitDishFeedback(input: NewDishFeedback): Promise<DishFeedback> {
   const [row] = await db.insert(dishFeedback).values(input).returning()
   if (!row) throw new Error('Failed to submit feedback')
+  await analyticsService.trackEvent(row.householdId, row.memberId ?? null, 'feedback_submitted', {
+    reaction: row.reaction,
+    householdId: row.householdId,
+  })
   return row
 }
 

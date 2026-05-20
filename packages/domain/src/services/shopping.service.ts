@@ -13,6 +13,7 @@ import {
   type PlannedMeal,
 } from '@meal-planner/db'
 import type { BuyTiming, Ingredient, ItemStatus } from '@meal-planner/shared'
+import * as analyticsService from './analytics.service.js'
 
 export interface ShoppingListWithItems {
   list: ShoppingList
@@ -340,6 +341,10 @@ export async function generateShoppingList(planId: string): Promise<ShoppingList
       .values({ weeklyPlanId: planId, status: 'active' })
       .returning()
     if (!listRow) throw new Error('Failed to insert empty shopping_lists row')
+    await analyticsService.trackEvent(plan.householdId, null, 'shopping_list_generated', {
+      planId,
+      itemCount: 0,
+    })
     return { list: listRow, items: [] }
   }
 
@@ -401,6 +406,11 @@ export async function generateShoppingList(planId: string): Promise<ShoppingList
 
     const inserted = await tx.insert(shoppingListItems).values(itemValues).returning()
     return { list: listRow, items: inserted }
+  })
+
+  await analyticsService.trackEvent(plan.householdId, null, 'shopping_list_generated', {
+    planId,
+    itemCount: result.items.length,
   })
 
   return result

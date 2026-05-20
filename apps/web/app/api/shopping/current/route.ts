@@ -1,4 +1,9 @@
-import { planService, shoppingService, promoService } from '@meal-planner/domain'
+import {
+  planService,
+  shoppingService,
+  promoService,
+  analyticsService,
+} from '@meal-planner/domain'
 import { withAuth } from '../../../../lib/auth-middleware.js'
 
 export const GET = withAuth(async (_req, { user }) => {
@@ -6,6 +11,10 @@ export const GET = withAuth(async (_req, { user }) => {
   if (!householdId) {
     return Response.json({ error: 'Invalid token' }, { status: 401 })
   }
+
+  await analyticsService.trackEvent(householdId, null, 'shopping_list_opened', {
+    householdId,
+  })
 
   const plan = await planService.getCurrentApprovedPlan(householdId)
   if (!plan) return Response.json(null)

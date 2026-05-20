@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm'
 import {
   db,
+  households,
   weeklyPlans,
   plannedMeals,
   recipes,
@@ -24,6 +25,7 @@ import {
 } from '@meal-planner/ai'
 import * as householdService from './household.service.js'
 import * as feedbackService from './feedback.service.js'
+import * as analyticsService from './analytics.service.js'
 
 export interface GeneratePlanInput {
   householdId: string
@@ -213,6 +215,12 @@ export async function generateWeeklyPlan(
     insertedMeals.push(mealRow)
   }
 
+  await analyticsService.trackEvent(input.householdId, null, 'plan_generated', {
+    householdId: input.householdId,
+    weekStartDate: input.weekStartDate,
+    mealCount: insertedMeals.length,
+  })
+
   return { plan: planRow, meals: insertedMeals }
 }
 
@@ -223,6 +231,10 @@ export async function approvePlan(planId: string): Promise<WeeklyPlan> {
     .where(eq(weeklyPlans.id, planId))
     .returning()
   if (!row) throw new Error(`Plan ${planId} not found`)
+  await analyticsService.trackEvent(row.householdId, null, 'plan_approved', {
+    planId,
+    householdId: row.householdId,
+  })
   return row
 }
 
@@ -375,6 +387,12 @@ export async function replaceMeal(input: ReplaceMealInput): Promise<PlannedMeal>
     .where(eq(plannedMeals.id, existingMeal.id))
     .returning()
   if (!updatedMeal) throw new Error('Failed to update planned_meal row')
+
+  await analyticsService.trackEvent(plan.householdId, null, 'meal_replaced', {
+    plannedMealId: input.plannedMealId,
+    householdId: plan.householdId,
+  })
+
   return updatedMeal
 }
 
@@ -471,4 +489,48 @@ export async function getCurrentPlanForHousehold(
   const draft = await getLatestDraftPlan(householdId)
   if (draft) return getPlanWithMealsAndRecipes(draft.id)
   return null
+}
+
+export interface RetentionCandidate {
+  householdId: string
+  telegramChatId: string
+}
+
+// Week-2 retention: households created exactly 7 days ago that approved their
+// first plan but haven't started a new one (no plan created in the last 3 days).
+export async function getWeekTwoRetentionCandidates(
+  referenceDate: Date = new Date(),
+): Promise<RetentionCandidate[]> {
+  const dayMs = 24 * 60 * 60 * 1000
+  const sevenDaysAgoStart = new Date(referenceDate.getTime() - 7 * dayMs)
+  sevenDaysAgoStart.setUTCHours(0, 0, 0, 0)
+  const sevenDaysAgoEnd = new Date(sevenDaysAgoStart.getTime() + dayMs)
+  const threeDaysAgo = new Date(referenceDate.getTime() - 3 * dayMs)
+
+  const newHouseholds = await db
+    .select({ id: households.id, telegramChatId: households.telegramChatId })
+    .from(households)
+    .where(
+      and(
+        isNotNull(households.telegramChatId),
+        gte(households.createdAt, sevenDaysAgoStart),
+        lt(households.createdAt, sevenDaysAgoEnd),
+      ),
+    )
+
+  const candidates: RetentionCandidate[] = []
+  for (const h of newHouseholds) {
+    if (!h.telegramChatId) continue
+    const plans = await db
+      .select({ status: weeklyPlans.status, createdAt: weeklyPlans.createdAt })
+      .from(weeklyPlans)
+      .where(eq(weeklyPlans.householdId, h.id))
+
+    const approvedCount = plans.filter((p) => p.status === 'approved').length
+    const hasRecentPlan = plans.some((p) => p.createdAt >= threeDaysAgo)
+    if (approvedCount === 1 && !hasRecentPlan) {
+      candidates.push({ householdId: h.id, telegramChatId: h.telegramChatId })
+    }
+  }
+  return candidates
 }
