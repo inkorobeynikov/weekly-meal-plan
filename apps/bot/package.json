@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./bot": "./src/bot.ts"
+    "./bot": "./src/bot.ts",
+    "./jobs/feedback-reminder": "./src/jobs/feedback-reminder.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

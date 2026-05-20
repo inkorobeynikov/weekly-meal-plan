@@ -35,5 +35,5 @@
 - [x] Webhook handler in Next.js (`/api/telegram/webhook`)
 
 ## Phase 7 — Feedback + memory
-- [ ] Dish feedback capture
-- [ ] Family memory summary for plan prompts
+- [x] Dish feedback capture
+- [x] Family memory summary for plan prompts

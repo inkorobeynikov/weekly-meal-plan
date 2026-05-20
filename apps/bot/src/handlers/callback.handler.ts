@@ -1,6 +1,14 @@
-import { householdService } from '@meal-planner/domain'
+import { householdService, feedbackService } from '@meal-planner/domain'
+import type { FeedbackReaction } from '@meal-planner/shared'
 import type { BotContext } from '../session.js'
 import { inngest } from '../lib/inngest.js'
+
+// Short codes keep callback_data under Telegram's 64-byte limit (reaction + recipe UUID).
+const FEEDBACK_REACTION_CODES: Record<string, FeedbackReaction> = {
+  l: 'liked',
+  r: 'dont_repeat',
+  k: 'kids_didnt_eat',
+}
 
 function currentWeekStartDate(): string {
   const now = new Date()
@@ -16,6 +24,29 @@ export async function callbackHandler(ctx: BotContext): Promise<void> {
   if (!data) return
 
   await ctx.answerCallbackQuery().catch(() => {})
+
+  if (data.startsWith('fb:')) {
+    const [, code, recipeId] = data.split(':')
+    const reaction = code ? FEEDBACK_REACTION_CODES[code] : undefined
+    if (!reaction || !recipeId) return
+
+    const chatId = ctx.chat?.id
+    if (!chatId) return
+
+    const household = await householdService.getHouseholdByTelegramChatId(String(chatId))
+    if (!household) {
+      await ctx.reply('Najpierw skonfiguruj rodzinę przez /start.')
+      return
+    }
+
+    await feedbackService.submitDishFeedback({
+      householdId: household.id,
+      recipeId,
+      reaction,
+    })
+    await ctx.reply('Dzięki za opinię! 🙏')
+    return
+  }
 
   if (data === 'generate_plan_yes') {
     const chatId = ctx.chat?.id
