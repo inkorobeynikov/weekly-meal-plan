@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import type { ShoppingList, ShoppingListItem } from '@meal-planner/db'
+import type { PromotionFact, ShoppingList, ShoppingListItem } from '@meal-planner/db'
 import type { BuyTiming, ItemStatus } from '@meal-planner/shared'
 import { Body, Card, IconCart, IconCheck, tokens as T } from '@meal-planner/ui'
 import { ApiError, get, patch } from '../../../lib/api-client.js'
 
-type ShoppingResponse = { list: ShoppingList; items: ShoppingListItem[] } | null
+type ShoppingItem = ShoppingListItem & { promoHints?: PromotionFact[] }
+type ShoppingResponse = { list: ShoppingList; items: ShoppingItem[] } | null
 
 const BUY_TIMING_LABEL: Record<BuyTiming, string> = {
   main_shop: 'Na główne zakupy',
@@ -50,8 +51,8 @@ export default function ShoppingPage(): React.JSX.Element {
   }, [])
 
   const groupedByTiming = useMemo(() => {
-    if (!data) return new Map<BuyTiming, Map<string, ShoppingListItem[]>>()
-    const byTiming = new Map<BuyTiming, Map<string, ShoppingListItem[]>>()
+    if (!data) return new Map<BuyTiming, Map<string, ShoppingItem[]>>()
+    const byTiming = new Map<BuyTiming, Map<string, ShoppingItem[]>>()
     for (const item of data.items) {
       const timing = item.buyTiming
       let byCat = byTiming.get(timing)
@@ -67,7 +68,7 @@ export default function ShoppingPage(): React.JSX.Element {
     return byTiming
   }, [data])
 
-  async function toggleItem(item: ShoppingListItem): Promise<void> {
+  async function toggleItem(item: ShoppingItem): Promise<void> {
     if (!data) return
     const nextStatus: ItemStatus = isBought(item.status) ? 'pending' : 'bought'
     // Optimistic update
@@ -200,69 +201,146 @@ function ItemRow({
   onToggle,
   withDivider,
 }: {
-  item: ShoppingListItem
+  item: ShoppingItem
   onToggle: () => void
   withDivider: boolean
 }): React.JSX.Element {
   const bought = isBought(item.status)
+  const promoHints = item.promoHints ?? []
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <div
       style={{
-        display: 'flex',
-        width: '100%',
-        alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        background: 'transparent',
-        border: 0,
         borderBottom: withDivider ? `1px solid ${T.line}` : 'none',
-        cursor: 'pointer',
-        font: 'inherit',
-        textAlign: 'left',
       }}
     >
-      <span
-        aria-checked={bought}
-        role="checkbox"
+      <button
+        type="button"
+        onClick={onToggle}
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 6,
-          border: `1.5px solid ${bought ? T.sage : T.line2}`,
-          background: bought ? T.sage : 'transparent',
-          color: '#fff',
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          gap: 12,
+          padding: '12px 14px',
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          font: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        <span
+          aria-checked={bought}
+          role="checkbox"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            border: `1.5px solid ${bought ? T.sage : T.line2}`,
+            background: bought ? T.sage : 'transparent',
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {bought ? <IconCheck size={14} strokeWidth={2.4} /> : null}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            fontSize: 15,
+            color: bought ? T.faint : T.ink,
+            textDecoration: bought ? 'line-through' : 'none',
+          }}
+        >
+          {item.name}
+        </span>
+        <span
+          style={{
+            fontSize: 13,
+            color: bought ? T.faint : T.muted,
+            textDecoration: bought ? 'line-through' : 'none',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {item.quantity}
+          {item.unit ? ` ${item.unit}` : ''}
+        </span>
+      </button>
+      {promoHints.length > 0 ? <PromoBadge promos={promoHints} /> : null}
+    </div>
+  )
+}
+
+function PromoBadge({ promos }: { promos: PromotionFact[] }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const retailer = promos[0]?.retailer ?? ''
+  return (
+    <div style={{ padding: '0 14px 10px 48px', position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
           display: 'inline-flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 999,
+          border: `1px solid ${T.line2}`,
+          background: T.surface2,
+          color: T.ink2,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: 'pointer',
+          font: 'inherit',
         }}
       >
-        {bought ? <IconCheck size={14} strokeWidth={2.4} /> : null}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          fontSize: 15,
-          color: bought ? T.faint : T.ink,
-          textDecoration: bought ? 'line-through' : 'none',
-        }}
-      >
-        {item.name}
-      </span>
-      <span
-        style={{
-          fontSize: 13,
-          color: bought ? T.faint : T.muted,
-          textDecoration: bought ? 'line-through' : 'none',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {item.quantity}
-        {item.unit ? ` ${item.unit}` : ''}
-      </span>
-    </button>
+        🏷️ Promocja w {retailer}
+      </button>
+      {open ? (
+        <div
+          role="tooltip"
+          style={{
+            marginTop: 6,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: `1px solid ${T.line}`,
+            background: '#fff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+            maxWidth: 280,
+          }}
+        >
+          {promos.map((promo, i) => (
+            <div
+              key={promo.id}
+              style={{
+                marginTop: i === 0 ? 0 : 10,
+                paddingTop: i === 0 ? 0 : 10,
+                borderTop: i === 0 ? 'none' : `1px solid ${T.line}`,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
+                {promo.retailer}
+                {promo.priceText ? ` — ${promo.priceText}` : ''}
+              </div>
+              {promo.conditionsText ? (
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 3, lineHeight: 1.4 }}>
+                  {promo.conditionsText}
+                </div>
+              ) : null}
+              {promo.requiresLoyaltyApp ? (
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>
+                  Wymaga aplikacji lojalnościowej
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

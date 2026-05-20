@@ -8,9 +8,18 @@ importers:
 
   .:
     devDependencies:
+      '@meal-planner/db':
+        specifier: workspace:*
+        version: link:packages/db
+      '@meal-planner/domain':
+        specifier: workspace:*
+        version: link:packages/domain
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.1
       turbo:
         specifier: ^2.5.0
         version: 2.9.14
