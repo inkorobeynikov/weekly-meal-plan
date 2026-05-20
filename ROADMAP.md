@@ -23,7 +23,7 @@
 
 ## Phase 5 — Shopping list
 - [x] `shoppingService.generateShoppingList` (only runs once plan is approved)
-- [ ] Promotion-fact lookups (Biedronka/Lidl/Kaufland)
+- [x] Promotion-fact lookups (Biedronka/Lidl/Kaufland) — see Phase 8
 - [x] Web UI: W03 Shopping List
 - [ ] Web UI: W08 Shopping Checked
 - [x] Inngest job `meal-planner/shopping.generate` (triggered on plan approve)
@@ -37,3 +37,9 @@
 ## Phase 7 — Feedback + memory
 - [x] Dish feedback capture
 - [x] Family memory summary for plan prompts
+
+## Phase 8 — Promotions
+- [x] `scripts/import-promos.ts` — manual CSV importer (normalizes product names, upserts `promotion_facts`)
+- [x] `promoService.matchPromos` — match shopping list items to active promotions
+- [x] Shopping list API attaches `promoHints` to each item
+- [x] Web UI: promo badge + tap-to-open popover (price + conditions) on W03 Shopping List
