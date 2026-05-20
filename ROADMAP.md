@@ -1,15 +1,15 @@
 # Roadmap
 
-## Phase 1 — Monorepo scaffold
+## Phase 1 — Monorepo scaffold ✅ done
 - [x] Turborepo + pnpm workspaces
 - [x] Drizzle schema + db client
 - [x] Shared types/enums
 
-## Phase 2 — Design system
+## Phase 2 — Design system ✅ done
 - [x] `packages/ui` tokens, primitives, shell
 - [x] Mobile mockup `Meal Planner.html`
 
-## Phase 3 — AI plan generation
+## Phase 3 — AI plan generation ✅ done
 - [x] `packages/ai/src/prompts/plan.prompt.ts` (system + user prompts)
 - [x] `planService.generateWeeklyPlan` — fetch profile/memory, call OpenAI with `zodResponseFormat(WeeklyPlanSchema)`, Zod-validate, HARD-CONSTRAINT check (allergies + hardRestrictions), retry up to 2 attempts, persist recipes + weekly_plan + planned_meals
 - [x] `planService.replaceMeal` — AI replacement for a single meal with the same HARD-CONSTRAINT guard
@@ -28,18 +28,25 @@
 - [ ] Web UI: W08 Shopping Checked
 - [x] Inngest job `meal-planner/shopping.generate` (triggered on plan approve)
 
-## Phase 6 — Bot
+## Phase 6 — Bot ✅ done
 - [x] Bot onboarding (full conversation flow, Polish)
 - [x] Plan delivery via Telegram (/plan + inline "generate plan" callback)
 - [x] /shopping command — grouped list + deep link to web app
 - [x] Webhook handler in Next.js (`/api/telegram/webhook`)
 
-## Phase 7 — Feedback + memory
+## Phase 7 — Feedback + memory ✅ done
 - [x] Dish feedback capture
 - [x] Family memory summary for plan prompts
 
-## Phase 8 — Promotions
+## Phase 8 — Promotions ✅ done
 - [x] `scripts/import-promos.ts` — manual CSV importer (normalizes product names, upserts `promotion_facts`)
 - [x] `promoService.matchPromos` — match shopping list items to active promotions
 - [x] Shopping list API attaches `promoHints` to each item
 - [x] Web UI: promo badge + tap-to-open popover (price + conditions) on W03 Shopping List
+
+## Phase 9 — Analytics + deployment ✅ done
+- [x] `analyticsService.trackEvent` — fire-and-forget insert into `analytics_events` (never breaks main flow)
+- [x] Event instrumentation: `plan_generated`, `plan_approved`, `meal_replaced`, `shopping_list_generated`, `feedback_submitted`, `shopping_list_opened`
+- [x] Week-2 retention trigger — daily Inngest cron (09:00 Warsaw), nudges households 7 days post first approved plan, tracks `retention_nudge_sent`
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`) — install + `pnpm typecheck` on push/PR to main
+- [x] Vercel deployment config (`vercel.json`) for `apps/web`

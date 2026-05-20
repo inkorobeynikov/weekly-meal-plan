@@ -8,3 +8,4 @@
 - 2026-05-19  Phase 6: shopping list generation with ingredient aggregation and categorization
 - 2026-05-20  Phase 7: feedback loop — family memory, reaction UI, daily bot reminder
 - 2026-05-20  Phase 8: promotions matching + shopping list promo hints
+- 2026-05-20  Phase 9: analytics instrumentation, week-2 retention trigger, CI + deployment config
