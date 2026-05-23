@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, gt, inArray, isNotNull, lt, ne } from "drizzle-orm";
 import {
   db,
   households,
@@ -426,6 +426,8 @@ export async function replaceMeal(
     .returning();
   if (!recipeRow) throw new Error("Failed to insert replacement recipe row");
 
+  const oldRecipeId = existingMeal.recipeId;
+
   const [updatedMeal] = await db
     .update(plannedMeals)
     .set({ recipeId: recipeRow.id, servings: newRecipe.servings })
@@ -433,9 +435,60 @@ export async function replaceMeal(
     .returning();
   if (!updatedMeal) throw new Error("Failed to update planned_meal row");
 
+  // Keep adjacent lunch_leftover rows consistent with the parent dinner. The
+  // model has no explicit FK from a leftover to its dinner — they're linked
+  // implicitly via the shared recipeId. So after swapping a dinner we need to
+  // either re-point its leftovers at the new recipe (if the new dish is also
+  // good for leftovers) or drop them (otherwise next-day lunch would still
+  // show "X — resztki" pointing at a recipe that's no longer cooked).
+  let leftoversRepointed = 0;
+  let leftoversDeleted = 0;
+  if (existingMeal.mealType === "dinner") {
+    const linkedLeftovers = await db
+      .select({ id: plannedMeals.id })
+      .from(plannedMeals)
+      .where(
+        and(
+          eq(plannedMeals.weeklyPlanId, plan.id),
+          eq(plannedMeals.recipeId, oldRecipeId),
+          eq(plannedMeals.mealType, "lunch_leftover"),
+          eq(plannedMeals.leftoversPlanned, true),
+          ne(plannedMeals.id, existingMeal.id),
+          gt(plannedMeals.date, existingMeal.date),
+        ),
+      );
+    if (linkedLeftovers.length > 0) {
+      const ids = linkedLeftovers.map((m) => m.id);
+      if (newRecipe.isGoodForLeftovers) {
+        await db
+          .update(plannedMeals)
+          .set({ recipeId: recipeRow.id, servings: newRecipe.servings })
+          .where(inArray(plannedMeals.id, ids));
+        leftoversRepointed = ids.length;
+      } else {
+        await db
+          .delete(plannedMeals)
+          .where(inArray(plannedMeals.id, ids));
+        leftoversDeleted = ids.length;
+      }
+    }
+  } else if (
+    existingMeal.mealType === "lunch_leftover" &&
+    updatedMeal.leftoversPlanned
+  ) {
+    // The user explicitly swapped a leftover lunch — it's now a separately
+    // chosen dish, not literal leftovers of the previous dinner.
+    await db
+      .update(plannedMeals)
+      .set({ leftoversPlanned: false })
+      .where(eq(plannedMeals.id, updatedMeal.id));
+  }
+
   await analyticsService.trackEvent(plan.householdId, null, "meal_replaced", {
     plannedMealId: input.plannedMealId,
     householdId: plan.householdId,
+    leftoversRepointed,
+    leftoversDeleted,
   });
 
   return updatedMeal;

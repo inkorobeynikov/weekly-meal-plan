@@ -1,5 +1,6 @@
 # Changelog
 
+- 2026-05-23 Fix stale leftovers on swap — when a dinner is replaced, its lunch_leftover on later days is re-pointed at the new recipe (if isGoodForLeftovers) or deleted; swapping a lunch_leftover itself clears leftoversPlanned
 - 2026-05-23 Plan editing UX — swap one meal with a reason text, "dislike + replace" combo (records dont_repeat feedback then regenerates), multi-select mode with shared AI context and bulk-replace endpoint
 - 2026-05-23 Plan window now starts TOMORROW (not today), so today's shopping run covers a plan that begins tomorrow and ends on the Sunday after the upcoming one
 - 2026-05-23 /reset command + variable plan window — clear active plan/shopping list and regenerate from today through the Sunday after the upcoming one (8–14 days)
