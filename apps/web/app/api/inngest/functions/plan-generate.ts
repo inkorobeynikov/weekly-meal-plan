@@ -9,6 +9,7 @@ const DAY_PL = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'] as const
 // explicitly marked "(resztki)" so the user understands why a Monday dinner
 // title also appears on Tuesday as an obiad — it's not a duplicate.
 function mealTypeLabel(mealType: string): string {
+  if (mealType === 'lunch') return 'obiad'
   if (mealType === 'lunch_leftover') return 'obiad (resztki)'
   if (mealType === 'breakfast_template') return 'śniadanie'
   return 'kolacja'

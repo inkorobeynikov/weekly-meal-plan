@@ -58,6 +58,15 @@ const COST_LABEL: Record<Recipe['costLevel'], string> = {
   expensive: '€€€',
 }
 
+// Two meals per day (obiad + kolacja). The label makes the meal type explicit
+// on the card so a Sr 27 obiad and a Sr 27 kolacja don't look like duplicates.
+const MEAL_TYPE_LABEL: Record<string, string> = {
+  lunch: 'Obiad',
+  lunch_leftover: 'Obiad (resztki)',
+  dinner: 'Kolacja',
+  breakfast_template: 'Śniadanie',
+}
+
 function formatDay(isoDate: string): { name: string; short: string; day: string } {
   const d = new Date(`${isoDate}T00:00:00Z`)
   const dow = d.getUTCDay()
@@ -548,6 +557,18 @@ function DayCard({
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+              color: T.muted,
+              marginBottom: 2,
+            }}
+          >
+            {MEAL_TYPE_LABEL[meal.mealType] ?? meal.mealType}
+          </div>
           <div
             style={{
               fontSize: 17,
