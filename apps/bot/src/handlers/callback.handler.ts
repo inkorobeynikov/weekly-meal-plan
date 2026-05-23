@@ -11,20 +11,22 @@ const FEEDBACK_REACTION_CODES: Record<string, FeedbackReaction> = {
   k: 'kids_didnt_eat',
 }
 
-// The plan window now starts TODAY (Europe/Warsaw) and runs through the Sunday
-// AFTER the upcoming one — i.e. covers the rest of the current week plus the
-// next full week. Length is 8..14 days depending on what weekday today is.
+// The plan window starts TOMORROW (Europe/Warsaw) and runs through the Sunday
+// AFTER the upcoming one. The user shops today, so today's dinner is not
+// planned; the first cooked dinner is tomorrow's. Length is 7..14 days.
 function planWindow(): { weekStartDate: string; dayCount: number } {
   const todayWarsaw = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Warsaw',
   }).format(new Date())
   const start = new Date(`${todayWarsaw}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() + 1) // tomorrow
+  const startIso = start.toISOString().slice(0, 10)
   const dow = start.getUTCDay() // 0 = Sunday
-  // Days from today to the upcoming Sunday (0 if today is Sunday).
+  // Days from start to the upcoming Sunday (0 if start IS a Sunday).
   const daysToUpcomingSunday = (7 - dow) % 7
   // Plan ends on the Sunday after the upcoming one → +7 more days.
   const dayCount = daysToUpcomingSunday + 8
-  return { weekStartDate: todayWarsaw, dayCount }
+  return { weekStartDate: startIso, dayCount }
 }
 
 export async function callbackHandler(ctx: BotContext): Promise<void> {
