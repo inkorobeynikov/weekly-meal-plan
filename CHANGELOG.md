@@ -1,11 +1,24 @@
 # Changelog
 
-- 2026-05-19  Phase 3: AI plan generation — generateWeeklyPlan, replaceMeal, Inngest job
-- 2026-05-19  Phase 4a: Telegram initData auth + JWT middleware
-- 2026-05-19  Phase 4b: W04 Plan Review + W01 Weekly Plan screens
-- 2026-05-19  Phase 4c: W02 Recipe Detail + W03 Shopping + W05 Family screens
-- 2026-05-19  Phase 5: full bot onboarding flow, /shopping command, webhook handler
-- 2026-05-19  Phase 6: shopping list generation with ingredient aggregation and categorization
-- 2026-05-20  Phase 7: feedback loop — family memory, reaction UI, daily bot reminder
-- 2026-05-20  Phase 8: promotions matching + shopping list promo hints
-- 2026-05-20  Phase 9: analytics instrumentation, week-2 retention trigger, CI + deployment config
+- 2026-05-23 Single-meal swap now sees the rest of the plan — replaceMeal passes the other meals' (date, mealType, title) to the AI so it doesn't echo an adjacent day's dish (e.g. user replaces Tuesday lunch and the model picks salmon again because Monday lunch was salmon)
+- 2026-05-23 Lunch + dinner — AI now generates BOTH obiad (lunch) and kolacja (dinner) per day. New mealType 'lunch' in DB enum (migration 0001), schema and prompt updated; weekday cookingTime is now the SUM cap for both meals; lunch_leftover still optional in place of fresh lunch. Web /plan card shows meal-type label.
+- 2026-05-23 Fix stale leftovers on swap — when a dinner is replaced, its lunch_leftover on later days is re-pointed at the new recipe (if isGoodForLeftovers) or deleted; swapping a lunch_leftover itself clears leftoversPlanned
+- 2026-05-23 Plan editing UX — swap one meal with a reason text, "dislike + replace" combo (records dont_repeat feedback then regenerates), multi-select mode with shared AI context and bulk-replace endpoint
+- 2026-05-23 Plan window now starts TOMORROW (not today), so today's shopping run covers a plan that begins tomorrow and ends on the Sunday after the upcoming one
+- 2026-05-23 /reset command + variable plan window — clear active plan/shopping list and regenerate from today through the Sunday after the upcoming one (8–14 days)
+- 2026-05-20 Database bootstrap — generated initial Drizzle migration and applied schema to the development DB
+- 2026-05-20 Local dev stability — load root .env for bot dev and resolve workspace TS sources in web dev
+- 2026-05-20 Dev startup stability — transpile @meal-planner/bot in Next and lazy-init OpenAI client
+- 2026-05-19 Phase 3: AI plan generation — generateWeeklyPlan, replaceMeal, Inngest job
+- 2026-05-19 Phase 4a: Telegram initData auth + JWT middleware
+- 2026-05-19 Phase 4b: W04 Plan Review + W01 Weekly Plan screens
+- 2026-05-19 Phase 4c: W02 Recipe Detail + W03 Shopping + W05 Family screens
+- 2026-05-19 Phase 5: full bot onboarding flow, /shopping command, webhook handler
+- 2026-05-19 Phase 6: shopping list generation with ingredient aggregation and categorization
+- 2026-05-20 Phase 7: feedback loop — family memory, reaction UI, daily bot reminder
+- 2026-05-20 Phase 8: promotions matching + shopping list promo hints
+- 2026-05-20 Phase 9: analytics instrumentation, week-2 retention trigger, CI + deployment config
+- 2026-05-20 Fix: plan-generate now notifies the household on Telegram with a summary + approve button; added bot approve callback (mirrors web, triggers shopping.generate)
+- 2026-05-20 Rolling weekly plan: generate on any weekday (weekStartDate = today, Europe/Warsaw); AI prompt now derives weekday/weekend from a per-day Day map instead of fixed Mon-Fri offsets; /plan surfaces draft + approve button and offers generation when empty
+- 2026-05-20 Plan starts next day (rolling Thu→Wed etc.); wired Telegram Mini App auth on web (telegram-web-app.js + AuthGate → /api/auth/telegram); bot now opens the plan via web_app buttons + chat menu button; added cloudflared dev:tunnel automation + allowedDevOrigins
+- 2026-05-20 dev:tunnel now also launches the Inngest Dev Server (-u /api/inngest) and runs turbo in stream mode — full local stack (tunnel + web + bot + Inngest) from one command

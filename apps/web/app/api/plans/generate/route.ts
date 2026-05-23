@@ -1,15 +1,20 @@
 import { inngest } from '../../../../lib/inngest.js'
 import { withAuth } from '../../../../lib/auth-middleware.js'
 
-function nextMondayIso(): string {
-  const now = new Date()
-  const utcNow = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  )
-  const dow = utcNow.getUTCDay() // 0..6 with Sunday=0
-  const daysUntilMonday = ((1 - dow + 7) % 7) || 7
-  utcNow.setUTCDate(utcNow.getUTCDate() + daysUntilMonday)
-  return utcNow.toISOString().slice(0, 10)
+// Plan window starts TOMORROW (Europe/Warsaw) and runs through the Sunday
+// AFTER the upcoming one. Shopping happens today, so today's dinner is not
+// planned. Length is 7..14 days.
+function planWindow(): { weekStartDate: string; dayCount: number } {
+  const todayWarsaw = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Warsaw',
+  }).format(new Date())
+  const start = new Date(`${todayWarsaw}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() + 1) // tomorrow
+  const startIso = start.toISOString().slice(0, 10)
+  const dow = start.getUTCDay()
+  const daysToUpcomingSunday = (7 - dow) % 7
+  const dayCount = daysToUpcomingSunday + 8
+  return { weekStartDate: startIso, dayCount }
 }
 
 export const POST = withAuth(async (_req, { user }) => {
@@ -18,11 +23,11 @@ export const POST = withAuth(async (_req, { user }) => {
     return Response.json({ error: 'Invalid token payload' }, { status: 401 })
   }
 
-  const weekStartDate = nextMondayIso()
+  const { weekStartDate, dayCount } = planWindow()
   await inngest.send({
     name: 'meal-planner/plan.generate',
-    data: { householdId, weekStartDate },
+    data: { householdId, weekStartDate, dayCount },
   })
 
-  return Response.json({ status: 'generating', weekStartDate })
+  return Response.json({ status: 'generating', weekStartDate, dayCount })
 })

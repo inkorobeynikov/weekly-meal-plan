@@ -27,6 +27,7 @@ export const ageGroupEnum = pgEnum('age_group', [
 export const planStatusEnum = pgEnum('plan_status', ['draft', 'approved', 'archived'])
 export const mealTypeEnum = pgEnum('meal_type', [
   'dinner',
+  'lunch',
   'lunch_leftover',
   'breakfast_template',
 ])

@@ -58,6 +58,15 @@ const COST_LABEL: Record<Recipe['costLevel'], string> = {
   expensive: '€€€',
 }
 
+// Two meals per day (obiad + kolacja). The label makes the meal type explicit
+// on the card so a Sr 27 obiad and a Sr 27 kolacja don't look like duplicates.
+const MEAL_TYPE_LABEL: Record<string, string> = {
+  lunch: 'Obiad',
+  lunch_leftover: 'Obiad (resztki)',
+  dinner: 'Kolacja',
+  breakfast_template: 'Śniadanie',
+}
+
 function formatDay(isoDate: string): { name: string; short: string; day: string } {
   const d = new Date(`${isoDate}T00:00:00Z`)
   const dow = d.getUTCDay()
@@ -88,6 +97,13 @@ export default function PlanPage(): React.JSX.Element {
   const [generating, setGenerating] = useState(false)
   const [approving, setApproving] = useState(false)
   const [swappingId, setSwappingId] = useState<string | null>(null)
+  // Per-meal reason text (shown when the user expands "Zamień" on a card).
+  const [reasonByMeal, setReasonByMeal] = useState<Record<string, string>>({})
+  // Multi-select mode: pick several meals, give one shared context, regenerate all.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkContext, setBulkContext] = useState('')
+  const [bulkRunning, setBulkRunning] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -155,19 +171,97 @@ export default function PlanPage(): React.JSX.Element {
 
   async function handleSwap(mealId: string): Promise<void> {
     if (!data) return
+    const reason = (reasonByMeal[mealId] ?? '').trim()
     setSwappingId(mealId)
     try {
-      const result = await post<{ meal: PlannedMeal }>(
+      await post<{ meal: PlannedMeal }>(
         `/api/plans/${data.plan.id}/meals/${mealId}/replace`,
+        reason ? { reason } : undefined,
       )
-      // Refetch to get the new recipe joined in
       const fresh = await get<PlanResponse>('/api/plans/current')
       setData(fresh)
-      void result
+      // Clear the reason input after a successful replace.
+      setReasonByMeal((prev) => {
+        const next = { ...prev }
+        delete next[mealId]
+        return next
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to replace meal')
     } finally {
       setSwappingId(null)
+    }
+  }
+
+  // Combo: record "dont_repeat" feedback so future plans avoid this recipe,
+  // then immediately replace the meal with reason="family disliked this dish".
+  async function handleDislikeAndReplace(
+    mealId: string,
+    recipeId: string,
+  ): Promise<void> {
+    if (!data) return
+    setSwappingId(mealId)
+    try {
+      await post('/api/feedback', {
+        recipeId,
+        weeklyPlanId: data.plan.id,
+        reaction: 'dont_repeat',
+      })
+      await post<{ meal: PlannedMeal }>(
+        `/api/plans/${data.plan.id}/meals/${mealId}/replace`,
+        { reason: 'Family disliked this dish — please propose something quite different.' },
+      )
+      const fresh = await get<PlanResponse>('/api/plans/current')
+      setData(fresh)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dislike + replace meal')
+    } finally {
+      setSwappingId(null)
+    }
+  }
+
+  function toggleSelected(mealId: string): void {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(mealId)) next.delete(mealId)
+      else next.add(mealId)
+      return next
+    })
+  }
+
+  function toggleSelectMode(): void {
+    setSelectMode((on) => {
+      if (on) {
+        // Leaving select mode → clear staged state so it doesn't leak back in.
+        setSelectedIds(new Set())
+        setBulkContext('')
+      }
+      return !on
+    })
+  }
+
+  async function handleBulkReplace(): Promise<void> {
+    if (!data || selectedIds.size === 0) return
+    setBulkRunning(true)
+    try {
+      const mealIds = Array.from(selectedIds)
+      const context = bulkContext.trim()
+      const result = await post<{ failedCount: number }>(
+        `/api/plans/${data.plan.id}/meals/bulk-replace`,
+        context ? { mealIds, context } : { mealIds },
+      )
+      const fresh = await get<PlanResponse>('/api/plans/current')
+      setData(fresh)
+      setSelectedIds(new Set())
+      setBulkContext('')
+      setSelectMode(false)
+      if (result.failedCount > 0) {
+        setError(`Nie udało się zamienić ${result.failedCount} z ${mealIds.length} dań.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to bulk-replace meals')
+    } finally {
+      setBulkRunning(false)
     }
   }
 
@@ -249,6 +343,25 @@ export default function PlanPage(): React.JSX.Element {
             items={restrictions.length > 0 ? restrictions : ['Brak ograniczeń']}
           />
         </div>
+
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 999,
+              background: selectMode ? T.ink : 'transparent',
+              color: selectMode ? T.bg : T.ink,
+              border: `1px solid ${T.line2}`,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {selectMode ? 'Anuluj zaznaczenie' : 'Wybierz kilka dań'}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -258,7 +371,15 @@ export default function PlanPage(): React.JSX.Element {
             meal={meal}
             recipe={recipe}
             swapping={swappingId === meal.id}
+            reason={reasonByMeal[meal.id] ?? ''}
+            onReasonChange={(value) =>
+              setReasonByMeal((prev) => ({ ...prev, [meal.id]: value }))
+            }
             onSwap={() => handleSwap(meal.id)}
+            onDislikeAndReplace={() => handleDislikeAndReplace(meal.id, recipe.id)}
+            selectMode={selectMode}
+            selected={selectedIds.has(meal.id)}
+            onToggleSelect={() => toggleSelected(meal.id)}
           />
         ))}
       </div>
@@ -297,6 +418,56 @@ export default function PlanPage(): React.JSX.Element {
           {approving ? 'Zatwierdzanie…' : 'Zatwierdź plan'}
         </Button>
       </div>
+
+      {selectMode && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            padding: '12px 14px calc(env(safe-area-inset-bottom, 0px) + 14px)',
+            background: T.bg,
+            borderTop: `1px solid ${T.line}`,
+            zIndex: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>
+            Zaznaczono: {selectedIds.size}
+          </div>
+          <textarea
+            value={bulkContext}
+            onChange={(e) => setBulkContext(e.target.value)}
+            placeholder={'Kontekst dla AI (opcjonalnie). Np. „nie lubię drożdżówek, więcej ryb, mniej mięsa”'}
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: `1px solid ${T.line2}`,
+              fontSize: 13.5,
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+          <Button
+            variant="primary"
+            icon={<IconRefresh />}
+            onClick={() => {
+              if (selectedIds.size === 0 || bulkRunning) return
+              void handleBulkReplace()
+            }}
+          >
+            {bulkRunning
+              ? `Zamieniam ${selectedIds.size}…`
+              : `Zamień zaznaczone (${selectedIds.size})`}
+          </Button>
+        </div>
+      )}
     </Body>
   )
 }
@@ -305,17 +476,58 @@ function DayCard({
   meal,
   recipe,
   swapping,
+  reason,
+  onReasonChange,
   onSwap,
+  onDislikeAndReplace,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   meal: PlannedMeal
   recipe: Recipe
   swapping: boolean
+  reason: string
+  onReasonChange: (value: string) => void
   onSwap: () => void
+  onDislikeAndReplace: () => void
+  selectMode: boolean
+  selected: boolean
+  onToggleSelect: () => void
 }): React.JSX.Element {
   const dayInfo = formatDay(String(meal.date))
+  const [reasonOpen, setReasonOpen] = useState(false)
   return (
-    <Card style={{ padding: 14 }}>
+    <Card
+      style={{
+        padding: 14,
+        border: selected ? `2px solid ${T.ink}` : undefined,
+        cursor: selectMode ? 'pointer' : 'default',
+      }}
+      onClick={selectMode ? onToggleSelect : undefined}
+    >
       <div style={{ display: 'flex', gap: 12 }}>
+        {selectMode && (
+          <div
+            style={{
+              width: 22,
+              height: 22,
+              flexShrink: 0,
+              borderRadius: 6,
+              border: `1.5px solid ${selected ? T.ink : T.line2}`,
+              background: selected ? T.ink : 'transparent',
+              color: T.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              alignSelf: 'center',
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {selected ? '✓' : ''}
+          </div>
+        )}
         <div
           style={{
             width: 46,
@@ -345,6 +557,18 @@ function DayCard({
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+              color: T.muted,
+              marginBottom: 2,
+            }}
+          >
+            {MEAL_TYPE_LABEL[meal.mealType] ?? meal.mealType}
+          </div>
           <div
             style={{
               fontSize: 17,
@@ -379,34 +603,77 @@ function DayCard({
               </Badge>
             )}
           </div>
-          <div style={{ marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={onSwap}
-              disabled={swapping}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                borderRadius: 999,
-                background: 'transparent',
-                border: `1px solid ${T.line2}`,
-                color: T.ink,
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: swapping ? 'wait' : 'pointer',
-                opacity: swapping ? 0.6 : 1,
-              }}
-            >
-              <IconRefresh size={14} strokeWidth={2} />
-              Zamień
-            </button>
-          </div>
+          {!selectMode && (
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setReasonOpen((v) => !v)}
+                disabled={swapping}
+                style={pillStyle(swapping, reasonOpen)}
+              >
+                <IconRefresh size={14} strokeWidth={2} />
+                {reasonOpen ? 'Zamknij' : 'Zamień'}
+              </button>
+              <button
+                type="button"
+                onClick={onDislikeAndReplace}
+                disabled={swapping}
+                style={pillStyle(swapping, false)}
+                title={'Zapisz „nie powtarzaj” i wygeneruj inne danie'}
+              >
+                👎 Nie lubię — zamień
+              </button>
+            </div>
+          )}
+          {!selectMode && reasonOpen && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <textarea
+                value={reason}
+                onChange={(e) => onReasonChange(e.target.value)}
+                placeholder={'Dlaczego zamieniasz? (opcjonalnie). Np. „za długo gotować w środku tygodnia”'}
+                rows={2}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${T.line2}`,
+                  fontSize: 13.5,
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={onSwap}
+                disabled={swapping}
+                style={pillStyle(swapping, true)}
+              >
+                {swapping ? 'Generowanie…' : 'Wygeneruj nowe danie'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Card>
   )
+}
+
+function pillStyle(disabled: boolean, primary: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 12px',
+    borderRadius: 999,
+    background: primary ? T.ink : 'transparent',
+    border: `1px solid ${primary ? T.ink : T.line2}`,
+    color: primary ? T.bg : T.ink,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: disabled ? 'wait' : 'pointer',
+    opacity: disabled ? 0.6 : 1,
+  }
 }
 
 function EmptyState({

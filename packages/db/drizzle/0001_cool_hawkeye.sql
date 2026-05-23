@@ -1,0 +1,1 @@
+ALTER TYPE "public"."meal_type" ADD VALUE 'lunch' BEFORE 'lunch_leftover';
