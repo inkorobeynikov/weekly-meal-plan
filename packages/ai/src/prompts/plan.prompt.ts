@@ -24,17 +24,19 @@ export interface PlanGenerationContext {
     goodForLeftovers: string[]
   }
   weekStartDate: string
+  // Variable plan window length in days (1..14). dayOffset runs 0..dayCount-1.
+  dayCount: number
 }
 
 export function buildSystemPrompt(): string {
   return [
     'You are a meal planning assistant for families living in Poland.',
-    'You produce one weekly meal plan tailored to a specific household.',
+    'You produce a single meal plan tailored to a specific household for a window of consecutive days.',
     '',
     'OUTPUT RULES',
-    '- Produce 5 to 7 dinners for the week. Optionally add lunch_leftover meals when a dinner is good for leftovers.',
+    '- Produce exactly ONE dinner per day in the plan window (the user message lists every dayOffset with its calendar day). Optionally add lunch_leftover meals on days that follow a dinner marked good for leftovers.',
     '- The output MUST conform exactly to the provided WeeklyPlan JSON schema.',
-    '- dayOffset is 0..6 where 0 is the weekStartDate provided by the user (Monday).',
+    '- dayOffset is 0..(dayCount-1) where 0 is the weekStartDate provided by the user. The window can start on ANY weekday — consult the "Day map" in the user message for the actual calendar day and weekday/weekend tag of each dayOffset.',
     '- mealType is one of: "dinner", "lunch_leftover", "breakfast_template".',
     '- Each recipe.whyThisMeal field explains in 1-2 sentences why this dish fits the family this week.',
     '- reasoningSummary is a short paragraph (2-4 sentences) explaining the overall composition of the plan.',
@@ -58,8 +60,8 @@ export function buildSystemPrompt(): string {
     '- Honor budgetMode: "economical" uses cheap, staple ingredients; "normal" is mid-range; "flexible" allows higher-cost items.',
     '',
     'TIME AND PLANNING',
-    '- For weekday dinners (Mon-Fri, dayOffset 0..4) keep recipe.timeMinutes at or below the household\'s cookingTimeWeekdayMinutes.',
-    '- Weekend dinners (dayOffset 5..6) may take longer.',
+    '- For weekday dinners (Monday-Friday — see the Day map) keep recipe.timeMinutes at or below the household\'s cookingTimeWeekdayMinutes.',
+    '- Weekend dinners (Saturday and Sunday — see the Day map) may take longer.',
     '- When a recipe is good for leftovers, set isGoodForLeftovers=true and, when reasonable, add a lunch_leftover the next day with leftoversPlanned=true and the same recipe content.',
     '- Set isKidFriendly=true when the dish is appropriate for children in the household (consider their ageGroup).',
     '',
@@ -67,8 +69,33 @@ export function buildSystemPrompt(): string {
   ].join('\n')
 }
 
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+function buildDayMap(weekStartDate: string, dayCount: number): string {
+  const lines: string[] = []
+  const start = new Date(`${weekStartDate}T00:00:00Z`)
+  for (let offset = 0; offset < dayCount; offset++) {
+    const d = new Date(start)
+    d.setUTCDate(start.getUTCDate() + offset)
+    const dow = d.getUTCDay()
+    const isWeekend = dow === 0 || dow === 6
+    lines.push(
+      `- dayOffset ${offset} = ${d.toISOString().slice(0, 10)} (${WEEKDAY_NAMES[dow]}, ${isWeekend ? 'weekend' : 'weekday'})`,
+    )
+  }
+  return lines.join('\n')
+}
+
 export function buildUserPrompt(context: PlanGenerationContext): string {
-  const { householdName, members, preferences, familyMemory, weekStartDate } = context
+  const { householdName, members, preferences, familyMemory, weekStartDate, dayCount } = context
 
   const memberLines = members.length
     ? members
@@ -84,7 +111,11 @@ export function buildUserPrompt(context: PlanGenerationContext): string {
 
   return [
     `Household: ${householdName}`,
-    `Week start date (Monday, dayOffset=0): ${weekStartDate}`,
+    `Plan window start date (dayOffset=0): ${weekStartDate}`,
+    `Plan window length: ${dayCount} day(s). Produce one dinner for each dayOffset from 0 to ${dayCount - 1}.`,
+    '',
+    'Day map (dayOffset → calendar day):',
+    buildDayMap(weekStartDate, dayCount),
     '',
     'Members:',
     memberLines,
@@ -107,6 +138,6 @@ export function buildUserPrompt(context: PlanGenerationContext): string {
     fmt('All-time favorites', familyMemory.favorites),
     fmt('Good for leftovers', familyMemory.goodForLeftovers),
     '',
-    'Produce the weekly plan now. Remember: allergies and hardRestrictions are absolute.',
+    `Produce the plan now (${dayCount} consecutive day(s)). Remember: allergies and hardRestrictions are absolute.`,
   ].join('\n')
 }

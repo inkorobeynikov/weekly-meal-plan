@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -21,6 +22,13 @@ export default function RootLayout({
 }): React.JSX.Element {
   return (
     <html lang="pl">
+      <head>
+        {/* Telegram Mini App SDK — must load before our code reads initData. */}
+        <Script
+          src="https://telegram.org/js/telegram-web-app.js"
+          strategy="beforeInteractive"
+        />
+      </head>
       <body className="min-h-screen antialiased">{children}</body>
     </html>
   )

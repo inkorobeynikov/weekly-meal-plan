@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev",
+    "dev:tunnel": "tsx scripts/dev-tunnel.ts",
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
