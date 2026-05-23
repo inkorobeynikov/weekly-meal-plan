@@ -262,17 +262,37 @@ export interface ReplaceMealInput {
   reason?: string;
 }
 
+interface OtherMealRef {
+  date: string;
+  mealType: string;
+  title: string;
+}
+
 async function callAIForSingleRecipe(
   context: PlanGenerationContext,
   reason: string | undefined,
   previousTitle: string,
   mealType: string,
   dayOffset: number,
+  otherMeals: OtherMealRef[],
 ): Promise<AIRecipe> {
   const openai = getOpenAI();
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
     try {
+      // Give the model the full picture of what's already on the plate so it
+      // doesn't echo an adjacent day's dish (e.g. user regenerates Tuesday
+      // lunch and gets salmon again because Monday lunch was also salmon).
+      const otherMealsBlock =
+        otherMeals.length > 0
+          ? [
+              "Other meals already in this plan (do NOT repeat or closely resemble any of these — vary the main protein and cuisine across the week, and especially avoid clustering similar dishes on adjacent days):",
+              ...otherMeals.map(
+                (m) => `- ${m.date} ${m.mealType}: ${m.title}`,
+              ),
+            ].join("\n")
+          : "";
+
       const replaceInstructions = [
         `Replace a single meal in an existing weekly plan.`,
         `Previous recipe title (do NOT repeat or closely resemble): ${previousTitle}`,
@@ -280,9 +300,13 @@ async function callAIForSingleRecipe(
         reason
           ? `Reason for replacement: ${reason}`
           : "Reason for replacement: (none specified)",
+        otherMealsBlock ? "" : null,
+        otherMealsBlock || null,
         "",
         "Return exactly one Recipe matching the Recipe JSON schema.",
-      ].join("\n");
+      ]
+        .filter((line): line is string => line !== null)
+        .join("\n");
 
       const completion = await openai.beta.chat.completions.parse({
         model: MODELS.smart,
@@ -366,13 +390,22 @@ export async function replaceMeal(
       (1000 * 60 * 60 * 24),
   );
 
-  // Reconstruct the original plan window length from existing meal offsets so
-  // the prompt's Day map matches the dates the household actually sees.
-  const planMeals = await db
-    .select({ date: plannedMeals.date })
+  // Pull all the other meals in this plan with their recipe titles so the AI
+  // can avoid repeating an adjacent day's dish, AND so we can derive dayCount
+  // from the offsets (the Day map in the prompt must match the dates the
+  // household actually sees).
+  const planMealsWithRecipes = await db
+    .select({
+      id: plannedMeals.id,
+      date: plannedMeals.date,
+      mealType: plannedMeals.mealType,
+      recipeTitle: recipes.title,
+    })
     .from(plannedMeals)
+    .innerJoin(recipes, eq(recipes.id, plannedMeals.recipeId))
     .where(eq(plannedMeals.weeklyPlanId, plan.id));
-  const offsets = planMeals.map((m) =>
+
+  const offsets = planMealsWithRecipes.map((m) =>
     Math.round(
       (Date.parse(`${String(m.date)}T00:00:00Z`) -
         Date.parse(`${weekStart}T00:00:00Z`)) /
@@ -382,6 +415,15 @@ export async function replaceMeal(
   const dayCount = clampDayCount(
     offsets.length === 0 ? 7 : Math.max(...offsets) + 1,
   );
+
+  const otherMeals: OtherMealRef[] = planMealsWithRecipes
+    .filter((m) => m.id !== existingMeal.id)
+    .map((m) => ({
+      date: String(m.date),
+      mealType: String(m.mealType),
+      title: m.recipeTitle,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   const context: PlanGenerationContext = {
     householdName: household.name,
@@ -418,6 +460,7 @@ export async function replaceMeal(
     previousRecipe.title,
     existingMeal.mealType,
     dayOffset,
+    otherMeals,
   );
 
   const [recipeRow] = await db
