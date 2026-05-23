@@ -5,12 +5,25 @@ import { getBot } from '@meal-planner/bot/bot'
 
 const DAY_PL = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'] as const
 
-function formatMealLine(dateIso: string, title: string): string {
+// Polish labels for the meal types we actually generate. lunch_leftover is
+// explicitly marked "(resztki)" so the user understands why a Monday dinner
+// title also appears on Tuesday as an obiad — it's not a duplicate.
+function mealTypeLabel(mealType: string): string {
+  if (mealType === 'lunch_leftover') return 'obiad (resztki)'
+  if (mealType === 'breakfast_template') return 'śniadanie'
+  return 'kolacja'
+}
+
+function formatMealLine(
+  dateIso: string,
+  mealType: string,
+  title: string,
+): string {
   const d = new Date(`${dateIso}T00:00:00Z`)
   const day = DAY_PL[d.getUTCDay()] ?? '??'
   const dd = String(d.getUTCDate()).padStart(2, '0')
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${day} ${dd}.${mm} — ${title}`
+  return `${day} ${dd}.${mm} — ${mealTypeLabel(mealType)}: ${title}`
 }
 
 // Telegram only accepts HTTPS URLs in web_app buttons. Outside a tunnel (dev),
@@ -21,7 +34,10 @@ function isHttpsUrl(url: string): boolean {
 
 function buildPlanMessage(
   summary: string | null,
-  meals: { meal: { date: unknown }; recipe: { title: string } }[],
+  meals: {
+    meal: { date: unknown; mealType: string }
+    recipe: { title: string }
+  }[],
   appUrl: string,
 ): string {
   const lines: string[] = ['🍽️ Twój plan na ten tydzień jest gotowy!']
@@ -29,7 +45,9 @@ function buildPlanMessage(
   if (meals.length > 0) {
     lines.push('')
     for (const { meal, recipe } of meals) {
-      lines.push(formatMealLine(String(meal.date), recipe.title))
+      lines.push(
+        formatMealLine(String(meal.date), meal.mealType, recipe.title),
+      )
     }
   }
   // With an HTTPS app URL the user opens the plan via the web_app button below;
