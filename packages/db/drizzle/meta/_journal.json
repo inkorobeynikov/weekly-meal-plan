@@ -15,6 +15,13 @@
       "when": 1779527304086,
       "tag": "0001_cool_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0002_better_auth",
+      "breakpoints": true
     }
   ]
 }

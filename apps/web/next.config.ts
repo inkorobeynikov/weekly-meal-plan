@@ -32,6 +32,17 @@ const config: NextConfig = {
   // Allow the dev server to serve assets/HMR when opened through a cloudflared
   // tunnel (Telegram Mini App testing). Harmless in production builds.
   allowedDevOrigins: ["*.trycloudflare.com"],
+  // BetterAuth (and its transitive kysely/better-call) must NOT be bundled by
+  // webpack — static analysis trips over kysely's missing `DEFAULT_MIGRATION_TABLE`
+  // export and 500s the /api/auth/* routes. Treat them as Node externals so they
+  // are require()d at runtime where the import resolves fine.
+  serverExternalPackages: [
+    "better-auth",
+    "@better-auth/core",
+    "@better-auth/expo",
+    "better-call",
+    "kysely",
+  ],
   transpilePackages: [
     "@meal-planner/ai",
     "@meal-planner/bot",

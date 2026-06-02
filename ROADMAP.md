@@ -62,3 +62,19 @@
 - [x] Vercel deployment config (`vercel.json`) for `apps/web`
 - [x] Dev startup stability — Next transpiles `@meal-planner/bot`, and OpenAI client initializes lazily so missing `OPENAI_API_KEY` does not crash startup imports
 - [x] Local dev env + resolver stability — bot dev loads the root `.env`, web dev uses webpack with TS extension aliases for workspace packages, and `pnpm dev` stays up cleanly
+
+## Phase 10 — Mobile app (Expo / React Native) ✅ done
+
+- [x] `packages/ui-native` — RN design system on StyleSheet+tokens (mirrors `packages/ui` tokens): Button, Card, Badge, Avatar, SkeletonBlock, Tag, MealCard, SectionHeader + tests (21 passing)
+- [x] `apps/mobile` — Expo SDK 54 + Expo Router v6 + NativeWind v4 + TypeScript strict
+- [x] Typed HTTP client `src/lib/api.ts` (SecureStore Bearer, 401→logout, typed wrappers) — calls `apps/web` over HTTP, never imports domain/db
+- [x] BetterAuth (Google/Apple/email-password) — additive second auth path in `apps/web` (no global middleware; `withAuth` accepts Telegram-JWT OR BetterAuth session; lazy household bridge). New `user/session/account/verification` + `auth_household_link` tables
+- [x] Navigation shell: root auth guard, `(auth)` login/register, 4-tab bar (Plan/Przepisy/Zakupy/Rodzina)
+- [x] Onboarding W06 (3-step: household name, family size, allergies/restrictions)
+- [x] W01 Weekly Plan + W02 Recipe Detail (allergy-safe badge)
+- [x] W04 Plan Review + W07 Recipe Swap sheet — allergy HARD-CONSTRAINT banner blocks approval
+- [x] W03 Shopping List + W08 Checked celebration (confetti)
+- [x] W05 Family Preferences (debounced auto-save) + W09 Weekly Feedback
+- [x] Skeleton loading + empty/error states on every data screen
+- [x] Jest + React Native Testing Library — 13 suites / 40 tests (incl. auth-flow, allergy-guard, shopping-flow integration tests); `pnpm typecheck` green across all 9 packages
+- [ ] Backend REST routes for mobile-only actions still stubbed (`// TODO: backend route`): plan approve/replace/alternatives/feedback, shopping item PATCH/add, family member create

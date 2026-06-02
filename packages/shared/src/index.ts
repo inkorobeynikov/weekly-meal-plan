@@ -1,7 +1,7 @@
 export type MemberRole = 'planning_parent' | 'adult' | 'child'
 export type AgeGroup = 'adult' | 'child_0_3' | 'child_4_7' | 'child_8_12' | 'teen'
 export type PlanStatus = 'draft' | 'approved' | 'archived'
-export type MealType = 'dinner' | 'lunch_leftover' | 'breakfast_template'
+export type MealType = 'breakfast_template' | 'lunch' | 'lunch_leftover' | 'dinner'
 export type RecipeSource = 'ai_generated' | 'user_favorite' | 'imported'
 export type ShoppingListStatus = 'active' | 'completed' | 'archived'
 export type BuyTiming = 'main_shop' | 'later' | 'optional_if_near_store'
@@ -48,9 +48,10 @@ export const AGE_GROUPS: readonly AgeGroup[] = [
 ] as const
 export const PLAN_STATUSES: readonly PlanStatus[] = ['draft', 'approved', 'archived'] as const
 export const MEAL_TYPES: readonly MealType[] = [
-  'dinner',
-  'lunch_leftover',
   'breakfast_template',
+  'lunch',
+  'lunch_leftover',
+  'dinner',
 ] as const
 export const RECIPE_SOURCES: readonly RecipeSource[] = [
   'ai_generated',

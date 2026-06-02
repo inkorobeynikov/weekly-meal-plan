@@ -22,3 +22,4 @@
 - 2026-05-20 Rolling weekly plan: generate on any weekday (weekStartDate = today, Europe/Warsaw); AI prompt now derives weekday/weekend from a per-day Day map instead of fixed Mon-Fri offsets; /plan surfaces draft + approve button and offers generation when empty
 - 2026-05-20 Plan starts next day (rolling Thu→Wed etc.); wired Telegram Mini App auth on web (telegram-web-app.js + AuthGate → /api/auth/telegram); bot now opens the plan via web_app buttons + chat menu button; added cloudflared dev:tunnel automation + allowedDevOrigins
 - 2026-05-20 dev:tunnel now also launches the Inngest Dev Server (-u /api/inngest) and runs turbo in stream mode — full local stack (tunnel + web + bot + Inngest) from one command
+- 2026-06-02 Add apps/mobile React Native app (Expo Router, NativeWind, BetterAuth) + packages/ui-native design system; additive BetterAuth path in apps/web (no global middleware)
