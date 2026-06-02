@@ -6,6 +6,7 @@ Dostępne komendy:
 /start — rozpocznij konfigurację rodziny
 /plan — zobacz tygodniowy plan posiłków
 /shopping — otwórz listę zakupów
+/reset — usuń obecny plan i listę zakupów (aby wygenerować od nowa)
 /help — ta wiadomość`
 
 export async function handleHelp(ctx: BotContext): Promise<void> {

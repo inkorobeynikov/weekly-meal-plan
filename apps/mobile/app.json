@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Plan Posiłków",
+    "slug": "meal-planner-mobile",
+    "scheme": "mealplanner",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mealplanner.app"
+    },
+    "android": {
+      "package": "com.mealplanner.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-notifications"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000"
+    }
+  }
+}

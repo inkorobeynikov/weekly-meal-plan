@@ -4,19 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.6.13",
     "@meal-planner/ai": "workspace:*",
     "@meal-planner/bot": "workspace:*",
     "@meal-planner/db": "workspace:*",
     "@meal-planner/domain": "workspace:*",
     "@meal-planner/shared": "workspace:*",
     "@meal-planner/ui": "workspace:*",
+    "better-auth": "^1.6.13",
     "grammy": "^1.31.0",
     "inngest": "^3.27.0",
     "jose": "^5.9.6",
