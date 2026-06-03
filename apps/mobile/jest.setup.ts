@@ -33,8 +33,10 @@ jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn(),
   addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(() => Promise.resolve(null)),
   scheduleNotificationAsync: jest.fn(() => Promise.resolve('notification-id')),
   setNotificationChannelAsync: jest.fn(() => Promise.resolve(null)),
+  AndroidImportance: { DEFAULT: 3 },
 }));
 
 // ---- @better-auth/expo client plugin: avoid network + native deep links ----

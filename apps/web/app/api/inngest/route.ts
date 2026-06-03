@@ -1,9 +1,9 @@
 import { serve } from 'inngest/next'
-import { feedbackReminder } from '@meal-planner/bot/jobs/feedback-reminder'
 import { inngest } from '@/lib/inngest'
 import { planGenerate } from './functions/plan-generate'
 import { shoppingGenerate } from './functions/shopping-generate'
 import { retentionTrigger } from './functions/retention-trigger'
+import { feedbackReminder } from './functions/feedback-reminder'
 
 const functions: Parameters<typeof serve>[0]['functions'] = [
   planGenerate,

@@ -1,7 +1,9 @@
-import { InlineKeyboard } from 'grammy'
 import { inngest } from '@/lib/inngest'
-import { planService, householdService } from '@meal-planner/domain'
-import { getBot } from '@meal-planner/bot/bot'
+import {
+  planService,
+  householdService,
+  notificationService,
+} from '@meal-planner/domain'
 
 const DAY_PL = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'] as const
 
@@ -27,34 +29,22 @@ function formatMealLine(
   return `${day} ${dd}.${mm} — ${mealTypeLabel(mealType)}: ${title}`
 }
 
-// Telegram only accepts HTTPS URLs in web_app buttons. Outside a tunnel (dev),
-// the app URL is http://localhost, which is unreachable from the user's phone.
-function isHttpsUrl(url: string): boolean {
-  return /^https:\/\//i.test(url)
-}
-
-function buildPlanMessage(
+// Body text for the "plan ready" push: the AI summary (if any) followed by the
+// list of planned meals. The tap routes to the plan tab via the data payload.
+function buildPlanBody(
   summary: string | null,
   meals: {
     meal: { date: unknown; mealType: string }
     recipe: { title: string }
   }[],
-  appUrl: string,
 ): string {
-  const lines: string[] = ['🍽️ Twój plan na ten tydzień jest gotowy!']
-  if (summary) lines.push('', summary)
+  const lines: string[] = []
+  if (summary) lines.push(summary)
   if (meals.length > 0) {
-    lines.push('')
+    if (lines.length > 0) lines.push('')
     for (const { meal, recipe } of meals) {
-      lines.push(
-        formatMealLine(String(meal.date), meal.mealType, recipe.title),
-      )
+      lines.push(formatMealLine(String(meal.date), meal.mealType, recipe.title))
     }
-  }
-  // With an HTTPS app URL the user opens the plan via the web_app button below;
-  // otherwise (local dev without a tunnel) fall back to a plain link.
-  if (appUrl && !isHttpsUrl(appUrl)) {
-    lines.push('', `Szczegóły i zamiana dań: ${appUrl}/plan`)
   }
   return lines.join('\n')
 }
@@ -87,28 +77,25 @@ export const planGenerate = inngest.createFunction(
       `Generated weekly plan ${result.plan.id} for household ${data.householdId}`,
     )
 
-    // Notify the household over Telegram so they can review and approve the draft.
+    // Notify the household via push so they can review and approve the draft.
+    // (Replaces the dormant Telegram bot notification.)
     const household = await householdService.getHouseholdById(data.householdId)
-    if (household?.telegramChatId) {
+    if (household) {
       const full = await planService.getPlanWithMealsAndRecipes(result.plan.id)
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-      const text = buildPlanMessage(
+      const body = buildPlanBody(
         result.plan.aiReasoningSummary,
         full?.meals ?? [],
-        appUrl,
       )
-      const keyboard = new InlineKeyboard()
-      if (isHttpsUrl(appUrl)) {
-        keyboard.webApp('📋 Zobacz plan', `${appUrl}/plan`).row()
-      }
-      keyboard.text('Zatwierdź plan ✅', `ap:${result.plan.id}`)
-      await getBot().api.sendMessage(household.telegramChatId, text, {
-        reply_markup: keyboard,
-      })
-      logger.info(`Sent plan notification to chat ${household.telegramChatId}`)
-    } else {
+      const { sent } = await notificationService.notifyHousehold(
+        data.householdId,
+        {
+          title: '🍽️ Twój plan na ten tydzień jest gotowy!',
+          body,
+          data: { screen: 'plan', planId: result.plan.id },
+        },
+      )
       logger.info(
-        `Household ${data.householdId} has no telegramChatId; skipping notification`,
+        `Sent plan notification for household ${data.householdId} to ${sent} device(s)`,
       )
     }
 

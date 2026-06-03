@@ -416,6 +416,18 @@ export function updatePreferences(data: UpdatePreferencesInput): Promise<FamilyP
   }).then((res) => res.preferences);
 }
 
+// POST /api/push/register -> registers this device's Expo push token for the
+// authenticated household. Replaces the dormant Telegram notification channel.
+export function registerPushToken(
+  token: string,
+  platform: 'ios' | 'android' | 'web',
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>('/api/push/register', {
+    method: 'POST',
+    body: { token, platform },
+  });
+}
+
 // GET /api/recipes/:recipeId -> { recipe }.
 export function getRecipe(recipeId: string): Promise<Recipe> {
   return apiFetch<{ recipe: Recipe }>(`/api/recipes/${recipeId}`).then((res) => res.recipe);

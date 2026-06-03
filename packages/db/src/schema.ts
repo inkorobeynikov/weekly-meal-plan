@@ -77,6 +77,23 @@ export const households = pgTable('households', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Expo push tokens — the notification channel that replaces the (now dormant)
+// Telegram bot. One household can have many tokens (multiple devices/members).
+// telegramChatId on households is kept as-is for the dormant bot.
+export const pushTokens = pgTable('push_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  // The authenticated principal that registered this token. Nullable because the
+  // token belongs to the household; we don't always have a stable per-user id.
+  userId: text('user_id'),
+  token: text('token').notNull().unique(),
+  platform: text('platform').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const householdMembers = pgTable('household_members', {
   id: uuid('id').primaryKey().defaultRandom(),
   householdId: uuid('household_id')
@@ -260,6 +277,14 @@ export const householdsRelations = relations(households, ({ many, one }) => ({
   plans: many(weeklyPlans),
   recipes: many(recipes),
   feedback: many(dishFeedback),
+  pushTokens: many(pushTokens),
+}))
+
+export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
+  household: one(households, {
+    fields: [pushTokens.householdId],
+    references: [households.id],
+  }),
 }))
 
 export const householdMembersRelations = relations(householdMembers, ({ one }) => ({
@@ -364,3 +389,5 @@ export type PromotionFact = typeof promotionFacts.$inferSelect
 export type NewPromotionFact = typeof promotionFacts.$inferInsert
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect
 export type NewAnalyticsEvent = typeof analyticsEvents.$inferInsert
+export type PushToken = typeof pushTokens.$inferSelect
+export type NewPushToken = typeof pushTokens.$inferInsert
