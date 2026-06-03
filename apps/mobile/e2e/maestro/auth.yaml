@@ -30,9 +30,14 @@ env:
 - tapOn:
     id: "register-name"
 - inputText: "Jan"
+# Dismiss the keyboard between every field — on the 3-field register screen it
+# otherwise covers the lower inputs, so the tap misses and text lands in the
+# previously-focused field (e.g. email + password concatenated).
+- hideKeyboard
 - tapOn:
     id: "register-email"
 - inputText: "jan@przyklad.pl"
+- hideKeyboard
 - tapOn:
     id: "register-password"
 - inputText: "haslo12345"
@@ -41,12 +46,12 @@ env:
     id: "register-submit"
 
 # --- New account lands in onboarding (W06) ---
+# Match the step-1 name input by testID rather than the Polish title, so the
+# assertion is independent of console/file encoding.
 - extendedWaitUntil:
     visible:
-      text: "Jak masz na imię?"
+      id: "onboarding-name"
     timeout: 30000
-- assertVisible:
-    text: "Krok 1 z 3"
 - tapOn:
     id: "onboarding-skip"
 - tapOn:

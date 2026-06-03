@@ -11,15 +11,16 @@ env:
     clearState: true
 
 # Sign in to reach onboarding (fresh install routes here after login).
+# Steps are detected by testIDs / interactive elements, NOT the "Krok N z 3"
+# progress dots — that label sits on a non-accessible container View, so Maestro
+# can't match it as an element.
 - runFlow: subflows/login-email.yaml
 - extendedWaitUntil:
     visible:
-      text: "Jak masz na imię?"
+      id: "onboarding-name"
     timeout: 30000
 
 # --- Step 1: household name ---
-- assertVisible:
-    text: "Krok 1 z 3"
 - tapOn:
     id: "onboarding-name"
 - inputText: "Rodzina Testowa"
@@ -27,17 +28,15 @@ env:
 - tapOn:
     id: "onboarding-next"
 
-# --- Step 2: family size ---
-- assertVisible:
-    text: "Ile osób w rodzinie?"
-- assertVisible:
-    text: "Krok 2 z 3"
+# --- Step 2: family size (just advance) ---
 - tapOn:
     id: "onboarding-next"
 
-# --- Step 3: allergies (HARD CONSTRAINTS) ---
-- assertVisible:
-    text: "Czy ktoś ma alergie?"
+# --- Step 3: allergies (HARD CONSTRAINTS) — the chips only exist on this step ---
+- extendedWaitUntil:
+    visible:
+      text: "Gluten"
+    timeout: 15000
 - tapOn:
     text: "Gluten"
 - tapOn:

@@ -29,22 +29,30 @@ env:
 - assertNotVisible:
     id: "plan-generate-first"
 
-# --- Plan appears once the background "job" finishes (screen polls) ---
+# --- Once the draft is ready the app auto-opens the Review screen (W04)
+#     (pendingReviewRef in plan/index.tsx jumps straight to review). ---
+- extendedWaitUntil:
+    visible:
+      text: "Przejrzyj plan"
+    timeout: 45000
+
+# --- Back to the plan day view (W01) to verify the day strip + meals ---
+- back
 - extendedWaitUntil:
     visible:
       id: "plan-review-cta"
-    timeout: 40000
+    timeout: 20000
 
-# --- Day strip shows 7 distinct days (Mon 8th → Sun 14th) ---
+# Day strip shows 7 distinct days (Mon 8th → Sun 14th).
 - assertVisible:
     id: "plan-day-2026-06-08"
 - assertVisible:
     id: "plan-day-2026-06-14"
-# obiad + kolacja for the selected day
+# obiad (lunch) + kolacja (dinner) for the selected day, matched by testID.
 - assertVisible:
-    text: "Obiad"
+    id: "plan-meal-lunch"
 - assertVisible:
-    text: "Kolacja"
+    id: "plan-meal-dinner"
 
 # --- Tap a meal → recipe detail (W02) ---
 - tapOn:

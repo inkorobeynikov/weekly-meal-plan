@@ -15,9 +15,10 @@ env:
 # --- Go to the Zakupy tab ---
 - tapOn:
     text: "Zakupy"
+# Full-match regex — the node reads "0 z 6 produktów kupionych".
 - extendedWaitUntil:
     visible:
-      text: "produktów kupionych"
+      text: ".*produktów kupionych.*"
     timeout: 20000
 
 # --- "Dodaj ręcznie": add a manual item ---

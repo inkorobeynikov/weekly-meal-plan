@@ -11,6 +11,9 @@ appId: com.mealplanner.app
 - tapOn:
     id: "login-email"
 - inputText: "e2e@example.com"
+# Dismiss the keyboard before the next field — otherwise it can cover the
+# password input and the text lands in the still-focused email field.
+- hideKeyboard
 - tapOn:
     id: "login-password"
 - inputText: "haslo12345"

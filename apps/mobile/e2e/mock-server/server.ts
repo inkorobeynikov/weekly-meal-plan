@@ -151,7 +151,12 @@ function sendAuthSuccess(res: ServerResponse): void {
     'Content-Type': 'application/json',
     // The BetterAuth expo plugin reads this header to persist the session token.
     'set-auth-token': AUTH_TOKEN,
-    'Set-Cookie': `mealplanner.session_token=${AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Lax`,
+    // The cookie MUST use the default `better-auth` prefix: the expo client only
+    // stores the cookie and fires its session-refresh signal when the Set-Cookie
+    // matches `cookiePrefix` (default "better-auth", since auth.ts sets only
+    // storagePrefix). A `mealplanner.` prefix is silently ignored → useSession()
+    // never refreshes → the app falls back to the login screen after sign-in.
+    'Set-Cookie': `better-auth.session_token=${AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Lax`,
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Expose-Headers': 'set-auth-token',
   });
@@ -459,6 +464,9 @@ const server = createServer((req, res) => {
   }
 
   const path = url.pathname;
+  // Request log — helps debug the app↔mock auth handshake during E2E bring-up.
+  // eslint-disable-next-line no-console
+  console.log(`[e2e-mock] ${method} ${path} (authed=${state.authed} scenario=${state.scenario})`);
   for (const route of routes) {
     if (route.method !== method) continue;
     const match = route.pattern.exec(path);

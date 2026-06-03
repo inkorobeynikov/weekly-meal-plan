@@ -21,18 +21,37 @@ env:
     visible:
       text: "Domownicy"
     timeout: 20000
-# Toggle an allergy chip (HARD CONSTRAINT) and a cuisine chip.
+# Toggle an allergy chip (HARD CONSTRAINT) and a cuisine chip — the cards sit
+# further down the scroll view, so scroll each into view first (tapOn does not
+# auto-scroll).
+- scrollUntilVisible:
+    element:
+      text: "Orzechy"
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     text: "Orzechy"
+- scrollUntilVisible:
+    element:
+      text: "Włoska"
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     text: "Włoska"
-# Budget segmented control.
+# Budget segmented control (bottom of the screen).
+- scrollUntilVisible:
+    element:
+      id: "family-budget-economical"
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: "family-budget-economical"
-# Debounced auto-save surfaces a status indicator.
-- extendedWaitUntil:
-    visible:
+# Debounced auto-save surfaces a status indicator at the top of the screen —
+# scroll back up to it (it also gives the 800ms debounce time to fire).
+- scrollUntilVisible:
+    element:
       id: "family-save-status"
+    direction: UP
     timeout: 10000
 
 # --- W09 Weekly feedback (deep link into /feedback/[planId]) ---

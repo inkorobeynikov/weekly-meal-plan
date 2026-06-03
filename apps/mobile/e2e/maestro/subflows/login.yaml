@@ -4,9 +4,10 @@
 appId: com.mealplanner.app
 ---
 - runFlow: login-email.yaml
+# Onboarding step 1 — match the name input by testID (language/encoding-proof).
 - extendedWaitUntil:
     visible:
-      text: "Jak masz na imię?"
+      id: "onboarding-name"
     timeout: 30000
 - tapOn:
     id: "onboarding-skip"

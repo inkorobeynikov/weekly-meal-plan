@@ -33,8 +33,9 @@ env:
     text: "Gotuj na średnim ogniu przez 20 minut."
 - tapOn:
     id: "recipe-tab-substitutions"
+# Maestro `text` is a FULL-match regex; the node reads "Ryż → Kasza gryczana".
 - assertVisible:
-    text: "Kasza gryczana"
+    text: ".*Kasza gryczana.*"
 - tapOn:
     id: "recipe-tab-ingredients"
 - assertVisible:
