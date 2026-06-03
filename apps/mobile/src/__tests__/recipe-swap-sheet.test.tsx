@@ -2,17 +2,12 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 // --- mocks -------------------------------------------------------------------
 
-interface ApiCall {
-  path: string;
-  options?: { method?: string; body?: unknown };
-}
-
-const mockApiFetch: jest.Mock<Promise<unknown>, [string, ApiCall['options']?]> =
+const mockReplaceMeal: jest.Mock<Promise<unknown>, [string, string, string?]> =
   jest.fn();
 
 jest.mock('../lib/api', () => ({
-  apiFetch: (path: string, options?: ApiCall['options']): Promise<unknown> =>
-    mockApiFetch(path, options),
+  replaceMeal: (planId: string, mealId: string, reason?: string): Promise<unknown> =>
+    mockReplaceMeal(planId, mealId, reason),
 }));
 
 // expo-router is not used by the sheet, but mock it for self-containment.
@@ -27,28 +22,20 @@ import { RecipeSwapSheet, type SwapMealRef } from '../components/RecipeSwapSheet
 const meal: SwapMealRef = {
   planId: 'plan1',
   mealId: 'm1',
-  recipeId: 'r1',
   name: 'Naleśniki',
   dayLabel: 'Pon',
   mealTypeLabel: 'Obiad',
 };
 
-const alternatives = [
-  { recipeId: 'r2', name: 'Spaghetti', matchScore: 0.98 },
-  { recipeId: 'r3', name: 'Risotto', matchScore: 0.91 },
-];
-
 beforeEach(() => {
-  mockApiFetch.mockReset();
+  mockReplaceMeal.mockReset();
 });
 
 // --- tests -------------------------------------------------------------------
 
 describe('RecipeSwapSheet (W07)', () => {
-  it('renders the current meal and loads alternatives', async () => {
-    mockApiFetch.mockResolvedValueOnce({ alternatives });
-
-    const { getByText } = render(
+  it('renders the current meal and the reason → replace form', () => {
+    const { getByText, getByTestId } = render(
       <RecipeSwapSheet
         visible
         meal={meal}
@@ -57,26 +44,19 @@ describe('RecipeSwapSheet (W07)', () => {
       />,
     );
 
-    // Header + current meal.
     expect(getByText('Zamień Pon · Obiad')).toBeTruthy();
     expect(getByText('Naleśniki')).toBeTruthy();
-
-    // Alternatives resolve.
-    await waitFor(() => expect(getByText('Spaghetti')).toBeTruthy());
-    expect(getByText('Risotto')).toBeTruthy();
-    expect(getByText('98% dopasowania')).toBeTruthy();
+    expect(getByTestId('swap-reason')).toBeTruthy();
+    expect(getByTestId('swap-confirm')).toBeTruthy();
   });
 
-  it('selecting an alternative confirms the swap and notifies the parent', async () => {
-    // 1st call -> alternatives, 2nd call -> replace confirmation.
-    mockApiFetch
-      .mockResolvedValueOnce({ alternatives })
-      .mockResolvedValueOnce({ id: 'm1' });
+  it('confirming with a reason calls replaceMeal and notifies the parent', async () => {
+    mockReplaceMeal.mockResolvedValueOnce({ id: 'm1' });
 
     const onSwapped: jest.Mock<void, [string]> = jest.fn();
     const onClose: jest.Mock<void, []> = jest.fn();
 
-    const { getByText } = render(
+    const { getByTestId } = render(
       <RecipeSwapSheet
         visible
         meal={meal}
@@ -85,25 +65,18 @@ describe('RecipeSwapSheet (W07)', () => {
       />,
     );
 
-    await waitFor(() => expect(getByText('Spaghetti')).toBeTruthy());
-
-    fireEvent.press(getByText('Spaghetti'));
+    fireEvent.changeText(getByTestId('swap-reason'), 'za ciężkie');
+    fireEvent.press(getByTestId('swap-confirm'));
 
     await waitFor(() => expect(onSwapped).toHaveBeenCalledWith('m1'));
     expect(onClose).toHaveBeenCalledTimes(1);
-
-    const confirmCall = mockApiFetch.mock.calls.find(
-      ([path]) => path === '/api/plans/plan1/meals/m1/replace',
-    );
-    expect(confirmCall).toBeDefined();
-    expect(confirmCall?.[1]?.method).toBe('POST');
-    expect(confirmCall?.[1]?.body).toEqual({ recipeId: 'r2' });
+    expect(mockReplaceMeal).toHaveBeenCalledWith('plan1', 'm1', 'za ciężkie');
   });
 
-  it('shows an error state when alternatives fail to load', async () => {
-    mockApiFetch.mockRejectedValueOnce(new Error('boom'));
+  it('confirming without a reason passes undefined', async () => {
+    mockReplaceMeal.mockResolvedValueOnce({ id: 'm1' });
 
-    const { getByText } = render(
+    const { getByTestId } = render(
       <RecipeSwapSheet
         visible
         meal={meal}
@@ -112,8 +85,32 @@ describe('RecipeSwapSheet (W07)', () => {
       />,
     );
 
+    fireEvent.press(getByTestId('swap-confirm'));
+
     await waitFor(() =>
-      expect(getByText('Nie udało się pobrać propozycji')).toBeTruthy(),
+      expect(mockReplaceMeal).toHaveBeenCalledWith('plan1', 'm1', undefined),
     );
+  });
+
+  it('shows an error state when the replacement fails', async () => {
+    mockReplaceMeal.mockRejectedValueOnce(new Error('boom'));
+
+    const onSwapped: jest.Mock<void, [string]> = jest.fn();
+
+    const { getByTestId, getByText } = render(
+      <RecipeSwapSheet
+        visible
+        meal={meal}
+        onClose={jest.fn()}
+        onSwapped={onSwapped}
+      />,
+    );
+
+    fireEvent.press(getByTestId('swap-confirm'));
+
+    await waitFor(() =>
+      expect(getByText('Nie udało się zamienić posiłku')).toBeTruthy(),
+    );
+    expect(onSwapped).not.toHaveBeenCalled();
   });
 });

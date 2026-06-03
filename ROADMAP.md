@@ -78,7 +78,7 @@
 - [x] Skeleton loading + empty/error states on every data screen
 - [x] Jest + React Native Testing Library — 13 suites / 40 tests (incl. auth-flow, allergy-guard, shopping-flow integration tests); `pnpm typecheck` green across all 9 packages
 - [x] Cross-platform UI E2E (`apps/mobile/e2e`) — Maestro flows for all 9 screens driving the real app against a typed, dependency-free mock API server (switchable scenarios); same flows run on iOS Simulator (macOS) + Android emulator (Windows); `testID`s added without breaking jest; opt-in nightly GH Actions (non-gating)
-- [ ] Backend REST routes for mobile-only actions still stubbed (`// TODO: backend route`): plan approve/replace/alternatives/feedback, shopping item PATCH/add, family member create
+- [x] Backend REST routes for mobile-only actions wired — removed every `// TODO: backend route` stub. `replaceMeal` (POST `/api/plans/:planId/meals/:mealId/replace`) and `updateShoppingItem` (PATCH `/api/shopping/items/:itemId`) now unwrap their existing routes; added the one genuinely missing route POST `/api/shopping/lists/:listId/items` (`shoppingService.addManualItem`). Recipe Swap reworked to A4 Variant 1 ("reason → replace") — the speculative GET `/alternatives` endpoint was dropped, not built. Plan approve/feedback were already routed.
 
 ## Phase 11 — "Plately" visual redesign ✅ done
 

@@ -367,12 +367,12 @@ export function resetPlan(): Promise<{ deletedPlans: number }> {
   });
 }
 
-// TODO: backend route — replaceMeal is not yet exposed over REST (planService.replaceMeal).
+// POST /api/plans/:planId/meals/:mealId/replace -> { meal }. AI-replaces the meal.
 export function replaceMeal(planId: string, mealId: string, reason?: string): Promise<PlannedMeal> {
-  return apiFetch<PlannedMeal>(`/api/plans/${planId}/meals/${mealId}/replace`, {
+  return apiFetch<{ meal: PlannedMeal }>(`/api/plans/${planId}/meals/${mealId}/replace`, {
     method: 'POST',
     body: reason !== undefined ? { reason } : null,
-  });
+  }).then((res) => res.meal);
 }
 
 // GET /api/shopping/current -> { list, items } or null (only after approval).
@@ -380,27 +380,27 @@ export function getShoppingList(): Promise<ShoppingListWithItems | null> {
   return apiFetch<ShoppingListWithItems | null>('/api/shopping/current');
 }
 
-// TODO: backend route — no item-status REST endpoint yet (shoppingService.updateItemStatus).
+// PATCH /api/shopping/items/:itemId -> { item }. Updates status / replacement text.
 export function updateShoppingItem(
   itemId: string,
   status: ItemStatus,
   replacementText?: string,
 ): Promise<ShoppingListItem> {
-  return apiFetch<ShoppingListItem>(`/api/shopping/items/${itemId}`, {
+  return apiFetch<{ item: ShoppingListItem }>(`/api/shopping/items/${itemId}`, {
     method: 'PATCH',
     body: replacementText !== undefined ? { status, replacementText } : { status },
-  });
+  }).then((res) => res.item);
 }
 
-// TODO: backend route — no add-item REST endpoint yet (shoppingService.addManualItem).
+// POST /api/shopping/lists/:listId/items -> { item }. Adds a manual item.
 export function addShoppingItem(
   listId: string,
   input: AddShoppingItemInput,
 ): Promise<ShoppingListItem> {
-  return apiFetch<ShoppingListItem>(`/api/shopping/lists/${listId}/items`, {
+  return apiFetch<{ item: ShoppingListItem }>(`/api/shopping/lists/${listId}/items`, {
     method: 'POST',
     body: { ...input },
-  });
+  }).then((res) => res.item);
 }
 
 // GET /api/family -> household + members + preferences.

@@ -26,7 +26,7 @@ function stripDiacritics(input: string): string {
   return input.normalize('NFD').replace(/[̀-ͯ]/g, '')
 }
 
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return stripDiacritics(name.trim().toLowerCase()).replace(/\s+/g, ' ')
 }
 
@@ -199,7 +199,7 @@ const CATEGORY_KEYWORDS: ReadonlyArray<{ category: string; keywords: readonly st
   },
 ]
 
-function categorize(name: string): string {
+export function categorize(name: string): string {
   const n = stripDiacritics(name.toLowerCase())
   for (const { category, keywords } of CATEGORY_KEYWORDS) {
     for (const kw of keywords) {
