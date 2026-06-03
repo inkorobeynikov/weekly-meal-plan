@@ -1,0 +1,151 @@
+# Mobile E2E (Maestro) — OPT-IN, NON-BLOCKING.
+#
+# This workflow is intentionally NOT triggered on pull_request, so it never gates
+# PR merges (it needs a device/emulator and is slow + minute-hungry). Run it
+# manually from the Actions tab, or let the nightly schedule pick it up.
+#
+# The PR-gating CI (.github/workflows/ci.yml — typecheck + jest) is unchanged.
+name: Mobile E2E (nightly / manual)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:30 UTC nightly.
+    - cron: "30 3 * * *"
+
+concurrency:
+  group: mobile-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Android on ubuntu-latest via a hardware-accelerated emulator.
+  # ---------------------------------------------------------------------------
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck mock server
+        run: pnpm -F @meal-planner/mobile e2e:typecheck
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start mock API server
+        run: |
+          nohup pnpm -F @meal-planner/mobile e2e:mock > mock.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf localhost:4010/__e2e/health && break || sleep 1
+          done
+
+      # Build the Android dev build + run the flows inside the emulator. The app
+      # reaches the host (where the mock runs) at 10.0.2.2; Maestro's runScript
+      # reaches it at localhost.
+      - name: Run flows on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          EXPO_PUBLIC_API_URL: http://10.0.2.2:4010
+          EXPO_PUBLIC_BETTER_AUTH_URL: http://10.0.2.2:4010
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            pnpm -F @meal-planner/mobile exec expo run:android --no-bundler --variant release
+            maestro test apps/mobile/e2e/maestro
+
+      - name: Upload Maestro debug output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-android
+          path: |
+            ~/.maestro/tests/**
+            mock.log
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # iOS on macos-latest. NOTE: macOS runners cost ~10x the minutes of Linux —
+  # this job is here for parity with the developer's MacBook target, run sparingly.
+  # ---------------------------------------------------------------------------
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot iOS Simulator
+        run: |
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl list devices booted
+
+      - name: Start mock API server
+        run: |
+          nohup pnpm -F @meal-planner/mobile e2e:mock > mock.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf localhost:4010/__e2e/health && break || sleep 1
+          done
+
+      - name: Build & run flows on iOS Simulator
+        env:
+          EXPO_PUBLIC_API_URL: http://localhost:4010
+          EXPO_PUBLIC_BETTER_AUTH_URL: http://localhost:4010
+        run: |
+          pnpm -F @meal-planner/mobile exec expo run:ios --configuration Release
+          maestro test apps/mobile/e2e/maestro
+
+      - name: Upload Maestro debug output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-ios
+          path: |
+            ~/.maestro/tests/**
+            mock.log
+          if-no-files-found: ignore
