@@ -56,9 +56,11 @@ type ReactionMap = Readonly<Record<string, FeedbackReaction>>;
 function ReactionPicker({
   selected,
   onSelect,
+  testIDPrefix,
 }: {
   selected: FeedbackReaction | undefined;
   onSelect: (value: FeedbackReaction) => void;
+  testIDPrefix?: string;
 }): React.JSX.Element {
   return (
     <View style={styles.reactionRow}>
@@ -67,6 +69,7 @@ function ReactionPicker({
         return (
           <Pressable
             key={r.value}
+            testID={testIDPrefix ? `${testIDPrefix}-${r.value}` : undefined}
             onPress={() => onSelect(r.value)}
             accessibilityRole="button"
             accessibilityLabel={r.label}
@@ -200,6 +203,7 @@ export default function FeedbackScreen(): React.JSX.Element {
               <ReactionPicker
                 selected={reactions[m.meal.id]}
                 onSelect={(value) => selectReaction(m.meal.id, value)}
+                testIDPrefix={`feedback-${m.meal.id}`}
               />
             </Card>
           ))
@@ -207,6 +211,7 @@ export default function FeedbackScreen(): React.JSX.Element {
 
         <Text style={styles.label}>Uwagi na następny tydzień?</Text>
         <TextInput
+          testID="feedback-note"
           value={note}
           onChangeText={setNote}
           placeholder="np. więcej dań jednogarnkowych, mniej ryb…"
@@ -219,7 +224,7 @@ export default function FeedbackScreen(): React.JSX.Element {
 
         {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
 
-        <Button onPress={submit} loading={submitting} style={styles.cta}>
+        <Button testID="feedback-submit" onPress={submit} loading={submitting} style={styles.cta}>
           Zapisz opinię
         </Button>
       </ScrollView>

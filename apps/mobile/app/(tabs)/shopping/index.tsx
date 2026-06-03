@@ -413,6 +413,7 @@ export default function ShoppingScreen(): React.JSX.Element {
           {adding ? (
             <View style={styles.addRow}>
               <TextInput
+                testID="shopping-add-input"
                 value={draftName}
                 onChangeText={setDraftName}
                 placeholder="Nazwa produktu"
@@ -423,7 +424,7 @@ export default function ShoppingScreen(): React.JSX.Element {
                 onSubmitEditing={() => void handleAdd()}
                 returnKeyType="done"
               />
-              <Button size="sm" onPress={() => void handleAdd()}>
+              <Button testID="shopping-add-confirm" size="sm" onPress={() => void handleAdd()}>
                 Dodaj
               </Button>
             </View>
@@ -439,6 +440,7 @@ export default function ShoppingScreen(): React.JSX.Element {
         {/* FAB */}
         {!adding ? (
           <Pressable
+            testID="shopping-add-fab"
             onPress={() => setAdding(true)}
             accessibilityRole="button"
             accessibilityLabel="Dodaj ręcznie"
@@ -472,6 +474,7 @@ function ItemRow({ item, last, onCheck, onNotFound }: ItemRowProps): React.JSX.E
   return (
     <View style={[styles.itemRow, !last && styles.itemRowBorder, checked && styles.itemRowDone]}>
       <Pressable
+        testID={`shopping-check-${item.id}`}
         onPress={onCheck}
         accessibilityRole="checkbox"
         accessibilityState={{ checked }}
@@ -504,6 +507,7 @@ function ItemRow({ item, last, onCheck, onNotFound }: ItemRowProps): React.JSX.E
       </View>
 
       <Pressable
+        testID={`shopping-notfound-${item.id}`}
         onPress={onNotFound}
         accessibilityRole="button"
         accessibilityLabel={`Nie znaleziono: ${item.name}`}
@@ -533,7 +537,7 @@ function Celebration({ onShare, onNewWeek }: CelebrationProps): React.JSX.Elemen
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.celebrate}>
+      <View testID="shopping-celebration" style={styles.celebrate}>
         <View style={styles.celebrateCircle}>
           <Ionicons name="checkmark-done" size={40} color={tokens.surface} />
         </View>
@@ -543,8 +547,8 @@ function Celebration({ onShare, onNewWeek }: CelebrationProps): React.JSX.Elemen
         </Text>
 
         <View style={styles.celebrateActions}>
-          <Button onPress={onShare}>Udostępnij listę</Button>
-          <Button variant="secondary" onPress={onNewWeek}>
+          <Button testID="shopping-share" onPress={onShare}>Udostępnij listę</Button>
+          <Button testID="shopping-new-week" variant="secondary" onPress={onNewWeek}>
             Rozpocznij nowy tydzień
           </Button>
         </View>

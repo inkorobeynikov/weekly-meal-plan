@@ -151,7 +151,7 @@ export default function RecipeDetailScreen(): React.JSX.Element {
           {isSafe ? (
             <Badge tone="sage" label="Bezpieczne dla rodziny ✓" style={styles.allergyBadge} />
           ) : (
-            <View style={styles.allergyWarning}>
+            <View testID="recipe-allergy-warning" style={styles.allergyWarning}>
               <Ionicons name="alert-circle" size={18} color={tokens.terraInk} />
               <Text style={styles.allergyWarningText}>
                 Uwaga na alergeny: {matchedAllergens.join(', ')}
@@ -166,6 +166,7 @@ export default function RecipeDetailScreen(): React.JSX.Element {
               return (
                 <Text
                   key={key}
+                  testID={`recipe-tab-${key}`}
                   onPress={() => setTab(key)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
@@ -196,6 +197,7 @@ export default function RecipeDetailScreen(): React.JSX.Element {
           disabled={!canSwap}
           onPress={() => setSwapOpen(true)}
           accessibilityLabel="Zamień w planie"
+          testID="recipe-swap-cta"
         >
           Zamień w planie
         </Button>

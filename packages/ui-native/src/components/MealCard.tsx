@@ -26,6 +26,10 @@ export interface MealCardProps {
   onPress?: () => void;
   onSwap?: () => void;
   style?: StyleProp<ViewStyle>;
+  // Optional stable selector for E2E (Maestro) automation on the outer card.
+  testID?: string;
+  // Optional stable selector for the inline swap affordance.
+  swapTestID?: string;
 }
 
 // The primary meal card used across the W04/W05/W07 screens: photo, dish name,
@@ -40,6 +44,8 @@ export function MealCard({
   onPress,
   onSwap,
   style,
+  testID,
+  swapTestID,
 }: MealCardProps): React.JSX.Element {
   const inner = (
     <>
@@ -61,6 +67,7 @@ export function MealCard({
           {onSwap ? (
             <Pressable
               onPress={onSwap}
+              testID={swapTestID}
               accessibilityRole="button"
               accessibilityLabel="Zamień posiłek"
               hitSlop={8}
@@ -95,6 +102,7 @@ export function MealCard({
     return (
       <Pressable
         onPress={onPress}
+        testID={testID}
         accessibilityRole="button"
         accessibilityLabel={name}
         style={[styles.card, style]}
@@ -105,7 +113,7 @@ export function MealCard({
   }
 
   return (
-    <View accessibilityLabel={name} style={[styles.card, style]}>
+    <View testID={testID} accessibilityLabel={name} style={[styles.card, style]}>
       {inner}
     </View>
   );

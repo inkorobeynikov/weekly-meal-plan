@@ -247,6 +247,7 @@ export default function PlanReviewScreen(): React.JSX.Element {
               loading={generating}
               onPress={() => void handleGenerate()}
               accessibilityLabel="Wygeneruj plan"
+              testID="review-generate-empty"
             >
               Wygeneruj plan
             </Button>
@@ -256,6 +257,7 @@ export default function PlanReviewScreen(): React.JSX.Element {
             {/* ⚠️ HARD CONSTRAINT warning banner — allergies must never pass. */}
             {hasConflict ? (
               <View
+                testID="review-allergy-banner"
                 style={styles.warningBanner}
                 accessibilityRole="alert"
                 accessibilityLabel="Ostrzeżenie o alergii"
@@ -294,6 +296,8 @@ export default function PlanReviewScreen(): React.JSX.Element {
                           {mealTypeLabel(m.meal.mealType)}
                         </Text>
                         <MealCard
+                          testID={`review-meal-${m.meal.mealType}`}
+                          swapTestID={`review-swap-${m.meal.mealType}`}
                           name={m.recipe.title}
                           cookTimeMinutes={m.recipe.timeMinutes}
                           portions={m.meal.servings}
@@ -317,6 +321,7 @@ export default function PlanReviewScreen(): React.JSX.Element {
             disabled={hasConflict}
             onPress={() => void handleApprove()}
             accessibilityLabel="Zatwierdź plan"
+            testID="review-approve"
             style={styles.footerBtn}
           >
             Zatwierdź plan
@@ -326,6 +331,7 @@ export default function PlanReviewScreen(): React.JSX.Element {
             loading={generating}
             onPress={() => void handleGenerate()}
             accessibilityLabel="Wygeneruj nowy"
+            testID="review-generate"
             style={styles.footerBtn}
           >
             Wygeneruj nowy

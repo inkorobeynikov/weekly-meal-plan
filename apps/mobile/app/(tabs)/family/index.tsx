@@ -384,6 +384,7 @@ export default function FamilyScreen(): React.JSX.Element {
           <SectionHeader title="Rodzina" />
           {saveIndicator ? (
             <Text
+              testID="family-save-status"
               style={[styles.saveBadge, saveStatus === 'error' ? styles.saveBadgeError : null]}
               accessibilityLabel={saveIndicator}
             >
@@ -444,6 +445,7 @@ export default function FamilyScreen(): React.JSX.Element {
             </View>
           ) : (
             <Pressable
+              testID="family-add-member"
               onPress={() => setAddOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="Dodaj członka rodziny"
@@ -515,6 +517,7 @@ export default function FamilyScreen(): React.JSX.Element {
               return (
                 <Pressable
                   key={minutes}
+                  testID={`family-cooking-${minutes}`}
                   onPress={() => setCookingTime(minutes)}
                   accessibilityRole="button"
                   accessibilityLabel={`${minutes} minut`}
@@ -539,6 +542,7 @@ export default function FamilyScreen(): React.JSX.Element {
               return (
                 <Pressable
                   key={opt.mode}
+                  testID={`family-budget-${opt.mode}`}
                   onPress={() => setBudget(opt.mode)}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}

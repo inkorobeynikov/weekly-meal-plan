@@ -23,6 +23,10 @@ export interface ButtonProps {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  // Optional stable selector for E2E (Maestro) automation. Maps to
+  // accessibilityIdentifier (iOS) / view tag (Android) on the underlying
+  // Pressable; purely additive and inert in normal rendering.
+  testID?: string;
 }
 
 const sizeStyles: Record<ButtonSize, { paddingV: number; paddingH: number; font: number }> = {
@@ -40,6 +44,7 @@ export function Button({
   children,
   style,
   accessibilityLabel,
+  testID,
 }: ButtonProps): React.JSX.Element {
   const isDisabled = disabled || loading;
   const sz = sizeStyles[size];
@@ -59,6 +64,7 @@ export function Button({
     <Pressable
       onPress={isDisabled ? undefined : onPress}
       disabled={isDisabled}
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
