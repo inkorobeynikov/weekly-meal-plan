@@ -77,4 +77,5 @@
 - [x] W05 Family Preferences (debounced auto-save) + W09 Weekly Feedback
 - [x] Skeleton loading + empty/error states on every data screen
 - [x] Jest + React Native Testing Library — 13 suites / 40 tests (incl. auth-flow, allergy-guard, shopping-flow integration tests); `pnpm typecheck` green across all 9 packages
+- [x] Cross-platform UI E2E (`apps/mobile/e2e`) — Maestro flows for all 9 screens driving the real app against a typed, dependency-free mock API server (switchable scenarios); same flows run on iOS Simulator (macOS) + Android emulator (Windows); `testID`s added without breaking jest; opt-in nightly GH Actions (non-gating)
 - [ ] Backend REST routes for mobile-only actions still stubbed (`// TODO: backend route`): plan approve/replace/alternatives/feedback, shopping item PATCH/add, family member create
