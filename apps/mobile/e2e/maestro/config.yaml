@@ -1,0 +1,5 @@
+# Maestro workspace config. `maestro test e2e/maestro` runs only the top-level
+# flow files here; the reusable building blocks under subflows/ are pulled in via
+# `runFlow` and must NOT execute as standalone flows.
+flows:
+  - "*.yaml"

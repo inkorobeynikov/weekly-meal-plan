@@ -1,0 +1,22 @@
+# Reusable: sign in and land on the Weekly Plan (W01).
+# On a fresh (cleared) install the root index sends a freshly-signed-in user to
+# onboarding (W06); we skip straight through it to reach the plan tab.
+appId: com.mealplanner.app
+---
+- runFlow: login-email.yaml
+- extendedWaitUntil:
+    visible:
+      text: "Jak masz na imię?"
+    timeout: 30000
+- tapOn:
+    id: "onboarding-skip"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-finish"
+    timeout: 15000
+- tapOn:
+    id: "onboarding-finish"
+- extendedWaitUntil:
+    visible:
+      text: "Plan tygodnia"
+    timeout: 30000

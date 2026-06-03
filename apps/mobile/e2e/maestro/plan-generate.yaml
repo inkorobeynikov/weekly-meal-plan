@@ -1,0 +1,55 @@
+# Weekly Plan generation (W01): empty → generate → "Generujemy…" state → plan
+# appears (mock flips no-plan → draft) → 7 distinct days with obiad + kolacja →
+# tap a meal → recipe detail (W02).
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "no-plan"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Empty state ---
+- assertVisible:
+    id: "plan-generate-first"
+- assertVisible:
+    text: "Nie masz jeszcze planu"
+- tapOn:
+    id: "plan-generate-first"
+
+# --- Generating state: spinner copy, no action button ---
+- extendedWaitUntil:
+    visible:
+      id: "plan-generating-state"
+    timeout: 15000
+- assertNotVisible:
+    id: "plan-generate-first"
+
+# --- Plan appears once the background "job" finishes (screen polls) ---
+- extendedWaitUntil:
+    visible:
+      id: "plan-review-cta"
+    timeout: 40000
+
+# --- Day strip shows 7 distinct days (Mon 8th → Sun 14th) ---
+- assertVisible:
+    id: "plan-day-2026-06-08"
+- assertVisible:
+    id: "plan-day-2026-06-14"
+# obiad + kolacja for the selected day
+- assertVisible:
+    text: "Obiad"
+- assertVisible:
+    text: "Kolacja"
+
+# --- Tap a meal → recipe detail (W02) ---
+- tapOn:
+    id: "plan-meal-lunch"
+- extendedWaitUntil:
+    visible:
+      id: "recipe-tab-ingredients"
+    timeout: 20000

@@ -1,0 +1,37 @@
+# Plan Review + Approve (W04): from a draft plan, open review, confirm there is
+# no allergy conflict, approve → back on plan showing "Plan zatwierdzony".
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "draft-plan"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Draft plan → review ---
+- tapOn:
+    id: "plan-review-cta"
+- extendedWaitUntil:
+    visible:
+      text: "Przejrzyj plan"
+    timeout: 20000
+# No conflict for a clean draft → approval is allowed.
+- assertNotVisible:
+    id: "review-allergy-banner"
+- assertVisible:
+    id: "review-approve"
+    enabled: true
+
+# --- Approve → back on plan, approved ---
+- tapOn:
+    id: "review-approve"
+- extendedWaitUntil:
+    visible:
+      id: "plan-approved-badge"
+    timeout: 20000
+- assertVisible:
+    text: "Plan zatwierdzony"

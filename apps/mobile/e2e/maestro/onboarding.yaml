@@ -1,0 +1,52 @@
+# Onboarding (W06): walk all three steps, toggle allergy chips, finish → plan.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "draft-plan"
+- launchApp:
+    clearState: true
+
+# Sign in to reach onboarding (fresh install routes here after login).
+- runFlow: subflows/login-email.yaml
+- extendedWaitUntil:
+    visible:
+      text: "Jak masz na imię?"
+    timeout: 30000
+
+# --- Step 1: household name ---
+- assertVisible:
+    text: "Krok 1 z 3"
+- tapOn:
+    id: "onboarding-name"
+- inputText: "Rodzina Testowa"
+- hideKeyboard
+- tapOn:
+    id: "onboarding-next"
+
+# --- Step 2: family size ---
+- assertVisible:
+    text: "Ile osób w rodzinie?"
+- assertVisible:
+    text: "Krok 2 z 3"
+- tapOn:
+    id: "onboarding-next"
+
+# --- Step 3: allergies (HARD CONSTRAINTS) ---
+- assertVisible:
+    text: "Czy ktoś ma alergie?"
+- tapOn:
+    text: "Gluten"
+- tapOn:
+    text: "Laktoza"
+- tapOn:
+    id: "onboarding-finish"
+
+# --- Finished → plan ---
+- extendedWaitUntil:
+    visible:
+      text: "Plan tygodnia"
+    timeout: 30000

@@ -1,0 +1,36 @@
+# Allergy HARD CONSTRAINT (W04): a plan whose meal contains a household allergen
+# must surface the warning banner AND keep the "Zatwierdź plan" button disabled —
+# approval is hard-blocked. This is the safety-critical flow.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "plan-with-allergen"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Open review for the conflicting plan ---
+- tapOn:
+    id: "plan-review-cta"
+- extendedWaitUntil:
+    visible:
+      id: "review-allergy-banner"
+    timeout: 20000
+- assertVisible:
+    text: "Wykryto alergeny — nie można zatwierdzić"
+
+# --- HARD BLOCK: approve button present but DISABLED ---
+- assertVisible:
+    id: "review-approve"
+    enabled: false
+# Tapping it must NOT navigate away — we stay on the review screen.
+- tapOn:
+    id: "review-approve"
+- assertVisible:
+    text: "Przejrzyj plan"
+- assertVisible:
+    id: "review-allergy-banner"

@@ -1,0 +1,57 @@
+# Family preferences (W05) + Weekly feedback (W09): toggle allergy/cuisine chips
+# and the budget segmented control (auto-saved), then open the feedback screen
+# (reached via a deep link — there is no in-app nav button), pick meal reactions,
+# add a note and submit.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "approved-plan"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- W05 Family preferences ---
+- tapOn:
+    text: "Rodzina"
+- extendedWaitUntil:
+    visible:
+      text: "Domownicy"
+    timeout: 20000
+# Toggle an allergy chip (HARD CONSTRAINT) and a cuisine chip.
+- tapOn:
+    text: "Orzechy"
+- tapOn:
+    text: "Włoska"
+# Budget segmented control.
+- tapOn:
+    id: "family-budget-economical"
+# Debounced auto-save surfaces a status indicator.
+- extendedWaitUntil:
+    visible:
+      id: "family-save-status"
+    timeout: 10000
+
+# --- W09 Weekly feedback (deep link into /feedback/[planId]) ---
+- openLink: "mealplanner://feedback/plan-1"
+- extendedWaitUntil:
+    visible:
+      text: "Jak minął ten tydzień?"
+    timeout: 20000
+- tapOn:
+    id: "feedback-m-lunch-0-favorite"
+- tapOn:
+    id: "feedback-m-dinner-0-liked"
+- tapOn:
+    id: "feedback-note"
+- inputText: "Więcej dań jednogarnkowych."
+- hideKeyboard
+- tapOn:
+    id: "feedback-submit"
+- extendedWaitUntil:
+    visible:
+      text: "Dzięki! Zapamiętam na przyszły tydzień 🙌"
+    timeout: 20000

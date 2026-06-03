@@ -1,0 +1,19 @@
+# Reusable: sign in with email/password from the login screen.
+# Social sign-in is hidden unless EXPO_PUBLIC_ENABLE_SOCIAL=true, so auth always
+# goes through email/password. Leaves the app wherever the root index routes to
+# next (onboarding on a fresh install, or the plan tab).
+appId: com.mealplanner.app
+---
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 30000
+- tapOn:
+    id: "login-email"
+- inputText: "e2e@example.com"
+- tapOn:
+    id: "login-password"
+- inputText: "haslo12345"
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
