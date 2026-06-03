@@ -9,7 +9,12 @@
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "e2e:mock": "tsx e2e/mock-server/server.ts",
+    "e2e:typecheck": "tsc -p e2e/tsconfig.json",
+    "e2e:ios": "maestro test e2e/maestro",
+    "e2e:android": "maestro test e2e/maestro",
+    "e2e": "node e2e/run-e2e.mjs"
   },
   "dependencies": {
     "@better-auth/expo": "^1.6.13",
@@ -51,6 +56,7 @@
     "@types/jest": "^29.5.12",
     "react-test-renderer": "19.1.0",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.0",
     "typescript": "^5.8.0"
   }
 }
