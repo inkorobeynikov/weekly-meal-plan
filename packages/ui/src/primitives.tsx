@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { tokens as T, radii, accentPair, type AccentTone } from './tokens.js';
+import { tokens as T, radii, shadows, accentPair, type AccentTone } from './tokens.js';
 import { IconAlert } from './icons.js';
 
 // ─── Badge ─────────────────────────────────────────────────────────────────
@@ -95,8 +95,7 @@ export function Card({
       style={{
         background: T.surface,
         borderRadius: radii.lg,
-        boxShadow:
-          '0 1px 0 rgba(31,27,22,0.04), 0 8px 24px -12px rgba(31,27,22,0.10)',
+        boxShadow: shadows.card,
         border: `1px solid ${T.line}`,
         ...style,
       }}
@@ -110,7 +109,7 @@ export function Card({
 export type ButtonVariant = 'primary' | 'ghost' | 'sage' | 'soft';
 
 const buttonVariants: Record<ButtonVariant, { bg: string; fg: string; bd: string }> = {
-  primary: { bg: T.ink, fg: T.bg, bd: 'transparent' },
+  primary: { bg: T.sage, fg: '#fff', bd: 'transparent' },
   ghost:   { bg: 'transparent', fg: T.ink, bd: T.line2 },
   sage:    { bg: T.sage, fg: '#fff', bd: 'transparent' },
   soft:    { bg: T.surface2, fg: T.ink, bd: 'transparent' },
@@ -184,19 +183,19 @@ export function Placeholder({
 }) {
   const stripe =
     tone === 'warm'
-      ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><path d='M-2 14L14 -2M0 16L16 0M2 18L18 2' stroke='%23E4DCCD' stroke-width='1'/></svg>"
-      : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><path d='M-2 14L14 -2M0 16L16 0M2 18L18 2' stroke='%23D9E2DB' stroke-width='1'/></svg>";
+      ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><path d='M-2 14L14 -2M0 16L16 0M2 18L18 2' stroke='%23C9DFA0' stroke-width='1'/></svg>"
+      : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><path d='M-2 14L14 -2M0 16L16 0M2 18L18 2' stroke='%23BBD9C2' stroke-width='1'/></svg>";
   return (
     <div
       style={{
         width,
         height,
         borderRadius: radius,
-        background: `${tone === 'warm' ? '#F2EADC' : '#E5EDE3'} url("${stripe}")`,
+        background: `${tone === 'warm' ? '#EDF6CF' : '#DCEDE2'} url("${stripe}")`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: tone === 'warm' ? '#9B8A6E' : '#6F8770',
+        color: tone === 'warm' ? '#6E7E45' : '#4E7763',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: 10,
         letterSpacing: 0.4,

@@ -423,7 +423,7 @@ function SegmentedControl<T extends string | number>({
         display: 'inline-flex',
         padding: 4,
         gap: 4,
-        background: '#F4EFE6',
+        background: T.surface2,
         borderRadius: 12,
         width: '100%',
       }}
@@ -440,12 +440,12 @@ function SegmentedControl<T extends string | number>({
               height: 36,
               borderRadius: 9,
               border: 0,
-              background: on ? '#FFFFFF' : 'transparent',
-              color: on ? '#1F1B16' : '#7A6F62',
+              background: on ? T.surface : 'transparent',
+              color: on ? T.ink : T.muted,
               fontSize: 13,
               fontWeight: on ? 700 : 600,
               cursor: 'pointer',
-              boxShadow: on ? '0 1px 0 rgba(31,27,22,0.04), 0 4px 12px -6px rgba(31,27,22,0.12)' : 'none',
+              boxShadow: on ? '0 1px 0 rgba(30,45,25,0.04), 0 4px 12px -6px rgba(30,45,25,0.14)' : 'none',
               font: 'inherit',
             }}
           >

@@ -138,7 +138,7 @@ export function TabBar({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(255,253,249,0.92)',
+        background: 'rgba(251,252,246,0.92)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
         borderTop: `1px solid ${T.line}`,
@@ -160,7 +160,7 @@ export function TabBar({
               flexDirection: 'column',
               alignItems: 'center',
               gap: 3,
-              color: on ? T.ink : T.faint,
+              color: on ? T.sage : T.faint,
               padding: '4px 12px',
               position: 'relative',
               background: 'none',
@@ -193,7 +193,7 @@ export function TabBar({
                   width: 4,
                   height: 4,
                   borderRadius: 2,
-                  background: T.ink,
+                  background: T.amber,
                 }}
               />
             )}

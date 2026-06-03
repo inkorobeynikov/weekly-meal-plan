@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { tokens as T } from '@meal-planner/ui'
 import { getToken, setToken } from '../../lib/api-client'
 
 // Minimal shape of the Telegram Mini App SDK we rely on (loaded in root layout).
@@ -99,10 +100,10 @@ export function AuthGate({
         justifyContent: 'center',
         padding: 24,
         textAlign: 'center',
-        color: '#4A4A4A',
+        color: T.muted,
         fontSize: 15,
         lineHeight: 1.5,
-        background: '#FBF7F1',
+        background: T.bg,
       }}
     >
       {message}
