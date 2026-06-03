@@ -94,6 +94,7 @@ export default function LoginScreen(): React.JSX.Element {
               {/* Social sign-in */}
               <View style={styles.socialGroup}>
                 <Pressable
+                  testID="login-google"
                   accessibilityRole="button"
                   accessibilityLabel="Zaloguj przez Google"
                   onPress={() => void handleSocial('google')}
@@ -105,6 +106,7 @@ export default function LoginScreen(): React.JSX.Element {
 
                 {Platform.OS === 'ios' ? (
                   <Pressable
+                    testID="login-apple"
                     accessibilityRole="button"
                     accessibilityLabel="Zaloguj przez Apple"
                     onPress={() => void handleSocial('apple')}
@@ -129,6 +131,7 @@ export default function LoginScreen(): React.JSX.Element {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>E-mail</Text>
             <TextInput
+              testID="login-email"
               accessibilityLabel="E-mail"
               value={email}
               onChangeText={setEmail}
@@ -146,6 +149,7 @@ export default function LoginScreen(): React.JSX.Element {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Hasło</Text>
             <TextInput
+              testID="login-password"
               accessibilityLabel="Hasło"
               value={password}
               onChangeText={setPassword}
@@ -170,12 +174,14 @@ export default function LoginScreen(): React.JSX.Element {
             loading={submitting}
             onPress={() => void handleEmailLogin()}
             accessibilityLabel="Zaloguj się"
+            testID="login-submit"
             style={styles.submit}
           >
             Zaloguj się
           </Button>
 
           <Pressable
+            testID="login-register-link"
             accessibilityRole="link"
             accessibilityLabel="Nie masz konta? Zarejestruj się"
             onPress={() => router.push('/(auth)/register')}

@@ -86,6 +86,7 @@ export default function RegisterScreen(): React.JSX.Element {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Imię</Text>
             <TextInput
+              testID="register-name"
               accessibilityLabel="Imię"
               value={name}
               onChangeText={setName}
@@ -101,6 +102,7 @@ export default function RegisterScreen(): React.JSX.Element {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>E-mail</Text>
             <TextInput
+              testID="register-email"
               accessibilityLabel="E-mail"
               value={email}
               onChangeText={setEmail}
@@ -118,6 +120,7 @@ export default function RegisterScreen(): React.JSX.Element {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Hasło</Text>
             <TextInput
+              testID="register-password"
               accessibilityLabel="Hasło"
               value={password}
               onChangeText={setPassword}
@@ -142,12 +145,14 @@ export default function RegisterScreen(): React.JSX.Element {
             loading={submitting}
             onPress={() => void handleRegister()}
             accessibilityLabel="Zarejestruj się"
+            testID="register-submit"
             style={styles.submit}
           >
             Zarejestruj się
           </Button>
 
           <Pressable
+            testID="register-login-link"
             accessibilityRole="link"
             accessibilityLabel="Masz już konto? Zaloguj się"
             onPress={() => router.replace('/(auth)/login')}

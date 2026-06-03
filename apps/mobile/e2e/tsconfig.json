@@ -1,0 +1,17 @@
+{
+  "//": "Standalone Node typecheck for the E2E mock server. Kept separate from the app's Expo/React-Native tsconfig (which excludes e2e/) so Node globals and DOM-free libs don't collide. Run: pnpm -F @meal-planner/mobile e2e:typecheck",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["mock-server/**/*.ts"]
+}

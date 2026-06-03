@@ -1,0 +1,76 @@
+# Family preferences (W05) + Weekly feedback (W09): toggle allergy/cuisine chips
+# and the budget segmented control (auto-saved), then open the feedback screen
+# (reached via a deep link — there is no in-app nav button), pick meal reactions,
+# add a note and submit.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "approved-plan"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- W05 Family preferences ---
+- tapOn:
+    text: "Rodzina"
+- extendedWaitUntil:
+    visible:
+      text: "Domownicy"
+    timeout: 20000
+# Toggle an allergy chip (HARD CONSTRAINT) and a cuisine chip — the cards sit
+# further down the scroll view, so scroll each into view first (tapOn does not
+# auto-scroll).
+- scrollUntilVisible:
+    element:
+      text: "Orzechy"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    text: "Orzechy"
+- scrollUntilVisible:
+    element:
+      text: "Włoska"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    text: "Włoska"
+# Budget segmented control (bottom of the screen).
+- scrollUntilVisible:
+    element:
+      id: "family-budget-economical"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "family-budget-economical"
+# Debounced auto-save surfaces a status indicator at the top of the screen —
+# scroll back up to it (it also gives the 800ms debounce time to fire).
+- scrollUntilVisible:
+    element:
+      id: "family-save-status"
+    direction: UP
+    timeout: 10000
+
+# --- W09 Weekly feedback (deep link into /feedback/[planId]) ---
+- openLink: "mealplanner://feedback/plan-1"
+- extendedWaitUntil:
+    visible:
+      text: "Jak minął ten tydzień?"
+    timeout: 20000
+- tapOn:
+    id: "feedback-m-lunch-0-favorite"
+- tapOn:
+    id: "feedback-m-dinner-0-liked"
+- tapOn:
+    id: "feedback-note"
+- inputText: "Więcej dań jednogarnkowych."
+- hideKeyboard
+- tapOn:
+    id: "feedback-submit"
+- extendedWaitUntil:
+    visible:
+      text: "Dzięki! Zapamiętam na przyszły tydzień 🙌"
+    timeout: 20000

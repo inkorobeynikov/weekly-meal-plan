@@ -1,0 +1,79 @@
+# Auth (W06 onboarding entry): register a new account → onboarding; then
+# "log out" and sign back in with email/password → plan.
+#
+# NOTE: the app has no logout button — sign-out is wired to the API 401 handler
+# (apps/mobile/app/_layout.tsx). To exercise a signed-out → signed-in round trip
+# deterministically we reset to a clean, logged-out state (clearState + the mock
+# resets auth on scenario change) and verify the login screen, then log in.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "draft-plan"
+- launchApp:
+    clearState: true
+
+# --- Register a brand-new account (W02 sign-up) ---
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 30000
+- tapOn:
+    id: "login-register-link"
+- extendedWaitUntil:
+    visible:
+      id: "register-name"
+    timeout: 15000
+- tapOn:
+    id: "register-name"
+- inputText: "Jan"
+# Dismiss the keyboard between every field — on the 3-field register screen it
+# otherwise covers the lower inputs, so the tap misses and text lands in the
+# previously-focused field (e.g. email + password concatenated).
+- hideKeyboard
+- tapOn:
+    id: "register-email"
+- inputText: "jan@przyklad.pl"
+- hideKeyboard
+- tapOn:
+    id: "register-password"
+- inputText: "haslo12345"
+- hideKeyboard
+- tapOn:
+    id: "register-submit"
+
+# --- New account lands in onboarding (W06) ---
+# Match the step-1 name input by testID rather than the Polish title, so the
+# assertion is independent of console/file encoding.
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-name"
+    timeout: 30000
+- tapOn:
+    id: "onboarding-skip"
+- tapOn:
+    id: "onboarding-finish"
+- extendedWaitUntil:
+    visible:
+      text: "Plan tygodnia"
+    timeout: 30000
+
+# --- "Log out" → fresh signed-out state shows the login screen ---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "draft-plan"
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "login-email"
+    timeout: 30000
+
+# --- Log back in with email/password → plan ---
+- runFlow: subflows/login.yaml
+- assertVisible:
+    text: "Plan tygodnia"

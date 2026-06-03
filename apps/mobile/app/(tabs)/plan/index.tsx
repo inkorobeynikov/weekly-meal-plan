@@ -300,6 +300,7 @@ export default function PlanScreen(): React.JSX.Element {
           >
             {state.plan.plan.status === 'draft' ? (
               <Pressable
+                testID="plan-review-cta"
                 onPress={() => router.push('/(tabs)/plan/review')}
                 accessibilityRole="button"
                 accessibilityLabel="Przejrzyj i zatwierdź plan"
@@ -310,7 +311,7 @@ export default function PlanScreen(): React.JSX.Element {
                 <Ionicons name="chevron-forward" size={18} color={tokens.surface} />
               </Pressable>
             ) : state.plan.plan.status === 'approved' ? (
-              <View style={styles.approvedChip}>
+              <View testID="plan-approved-badge" style={styles.approvedChip}>
                 <Ionicons name="checkmark-circle" size={16} color={tokens.sageInk} />
                 <Text style={styles.approvedChipText}>Plan zatwierdzony</Text>
               </View>
@@ -326,6 +327,7 @@ export default function PlanScreen(): React.JSX.Element {
                 return (
                   <Pressable
                     key={cell.isoDate}
+                    testID={`plan-day-${cell.isoDate}`}
                     onPress={() => setSelectedIso(cell.isoDate)}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
@@ -362,6 +364,7 @@ export default function PlanScreen(): React.JSX.Element {
                       {MEAL_TYPE_LABELS[meal.mealType]}
                     </Text>
                     <MealCard
+                      testID={`plan-meal-${meal.mealType}`}
                       name={recipe.title}
                       cookTimeMinutes={recipe.timeMinutes}
                       portions={meal.servings}
@@ -374,6 +377,7 @@ export default function PlanScreen(): React.JSX.Element {
           </ScrollView>
 
           <Pressable
+            testID="plan-fab"
             onPress={() => void onGenerate()}
             disabled={generating || generationStarted}
             accessibilityRole="button"
@@ -435,6 +439,7 @@ function EmptyState({ errorNotice, generating, onGenerate }: EmptyStateProps): R
         loading={generating}
         onPress={onGenerate}
         accessibilityLabel="Wygeneruj pierwszy plan"
+        testID="plan-generate-first"
         style={styles.emptyButton}
       >
         Wygeneruj pierwszy plan
@@ -448,7 +453,7 @@ function EmptyState({ errorNotice, generating, onGenerate }: EmptyStateProps): R
 // is already running, and the screen auto-refreshes when the plan is ready).
 function GeneratingState(): React.JSX.Element {
   return (
-    <View style={styles.centered}>
+    <View testID="plan-generating-state" style={styles.centered}>
       <View style={styles.generatingIcon}>
         <ActivityIndicator size="large" color={tokens.sageInk} />
       </View>

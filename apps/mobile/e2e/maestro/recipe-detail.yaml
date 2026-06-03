@@ -1,0 +1,55 @@
+# Recipe Detail (W02): a recipe containing a household allergen shows the red
+# allergy badge; a clean recipe shows the green "Bezpieczne dla rodziny ✓"; the
+# Składniki / Kroki / Zamienniki tabs switch content.
+#
+# Uses the plan-with-allergen scenario: day 1 obiad is the gluten recipe
+# (household is allergic to Gluten) and day 1 kolacja is clean.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "plan-with-allergen"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Conflicting recipe → RED allergy badge ---
+- tapOn:
+    id: "plan-meal-lunch"
+- extendedWaitUntil:
+    visible:
+      id: "recipe-allergy-warning"
+    timeout: 20000
+- assertVisible:
+    text: "Uwaga na alergeny: Gluten"
+
+# --- Tabs switch: Składniki / Kroki / Zamienniki ---
+- tapOn:
+    id: "recipe-tab-steps"
+- assertVisible:
+    text: "Gotuj na średnim ogniu przez 20 minut."
+- tapOn:
+    id: "recipe-tab-substitutions"
+# Maestro `text` is a FULL-match regex; the node reads "Ryż → Kasza gryczana".
+- assertVisible:
+    text: ".*Kasza gryczana.*"
+- tapOn:
+    id: "recipe-tab-ingredients"
+- assertVisible:
+    text: "Mąka pszenna"
+
+# --- Back to plan, open a clean recipe → GREEN safe badge ---
+- back
+- extendedWaitUntil:
+    visible:
+      text: "Plan tygodnia"
+    timeout: 20000
+- tapOn:
+    id: "plan-meal-dinner"
+- extendedWaitUntil:
+    visible:
+      text: "Bezpieczne dla rodziny ✓"
+    timeout: 20000

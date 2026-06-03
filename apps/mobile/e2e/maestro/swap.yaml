@@ -1,0 +1,52 @@
+# Recipe Swap (W07): open the swap sheet from the review screen, wait for the
+# AI alternatives to load, re-roll, then pick one.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "draft-plan"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Reach review and open the swap sheet for a lunch (obiad) meal ---
+- tapOn:
+    id: "plan-review-cta"
+- extendedWaitUntil:
+    visible:
+      text: "Przejrzyj plan"
+    timeout: 20000
+- tapOn:
+    id: "review-swap-lunch"
+- extendedWaitUntil:
+    visible:
+      id: "swap-sheet"
+    timeout: 15000
+- assertVisible:
+    text: "Propozycje"
+
+# --- Alternatives load (3 from the mock) ---
+- extendedWaitUntil:
+    visible:
+      id: "swap-alt-r-alt-1"
+    timeout: 15000
+# Re-roll proposes a fresh set.
+- tapOn:
+    id: "swap-reroll"
+- extendedWaitUntil:
+    visible:
+      id: "swap-alt-r-alt-2"
+    timeout: 15000
+
+# --- Select an alternative → sheet closes, back on review ---
+- tapOn:
+    id: "swap-alt-r-alt-1"
+- extendedWaitUntil:
+    visible:
+      text: "Przejrzyj plan"
+    timeout: 15000
+- assertNotVisible:
+    id: "swap-sheet"

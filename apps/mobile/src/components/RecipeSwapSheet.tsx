@@ -158,7 +158,7 @@ export function RecipeSwapSheet({
           onPress={onClose}
         />
 
-        <View style={styles.sheet}>
+        <View testID="swap-sheet" style={styles.sheet}>
           {/* Grab handle */}
           <View style={styles.handle} />
 
@@ -167,6 +167,7 @@ export function RecipeSwapSheet({
               {`Zamień ${meal.dayLabel} · ${meal.mealTypeLabel}`}
             </Text>
             <Pressable
+              testID="swap-close"
               accessibilityRole="button"
               accessibilityLabel="Zamknij"
               hitSlop={8}
@@ -185,6 +186,7 @@ export function RecipeSwapSheet({
           <View style={styles.altHeaderRow}>
             <Text style={styles.sectionLabel}>Propozycje</Text>
             <Pressable
+              testID="swap-reroll"
               accessibilityRole="button"
               accessibilityLabel="Zaproponuj inne"
               hitSlop={8}
@@ -232,6 +234,7 @@ export function RecipeSwapSheet({
                 return (
                   <MealCard
                     key={alt.recipeId}
+                    testID={`swap-alt-${alt.recipeId}`}
                     name={isSubmitting ? `${alt.name} · Zamieniam…` : alt.name}
                     imageUri={alt.imageUri}
                     cookTimeMinutes={alt.cookTimeMinutes}

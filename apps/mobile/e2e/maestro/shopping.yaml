@@ -1,0 +1,60 @@
+# Shopping list (W03 → W08): add an item manually, check every item so progress
+# fills, then the all-bought celebration "Wszystko kupione! 🎉" appears.
+appId: com.mealplanner.app
+env:
+  MOCK_URL: "http://localhost:4010"
+---
+- runScript:
+    file: subflows/setScenario.js
+    env:
+      SCENARIO: "shopping-active"
+- launchApp:
+    clearState: true
+- runFlow: subflows/login.yaml
+
+# --- Go to the Zakupy tab ---
+- tapOn:
+    text: "Zakupy"
+# Full-match regex — the node reads "0 z 6 produktów kupionych".
+- extendedWaitUntil:
+    visible:
+      text: ".*produktów kupionych.*"
+    timeout: 20000
+
+# --- "Dodaj ręcznie": add a manual item ---
+- tapOn:
+    id: "shopping-add-fab"
+- tapOn:
+    id: "shopping-add-input"
+- inputText: "Masło"
+- hideKeyboard
+- tapOn:
+    id: "shopping-add-confirm"
+- assertVisible:
+    text: "Masło"
+
+# --- Check every item → progress fills → celebration (W08) ---
+- tapOn:
+    id: "shopping-check-it-1"
+- tapOn:
+    id: "shopping-check-it-2"
+- tapOn:
+    id: "shopping-check-it-3"
+- tapOn:
+    id: "shopping-check-it-4"
+- tapOn:
+    id: "shopping-check-it-5"
+- tapOn:
+    id: "shopping-check-it-6"
+- extendedWaitUntil:
+    visible:
+      id: "shopping-check-it-new-1"
+    timeout: 10000
+- tapOn:
+    id: "shopping-check-it-new-1"
+- extendedWaitUntil:
+    visible:
+      id: "shopping-celebration"
+    timeout: 20000
+- assertVisible:
+    text: "Wszystko kupione! 🎉"

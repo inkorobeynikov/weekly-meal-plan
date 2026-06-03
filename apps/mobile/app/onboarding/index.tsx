@@ -231,6 +231,7 @@ export default function Onboarding(): React.JSX.Element {
 
             <Text style={styles.label}>Nazwa rodziny</Text>
             <TextInput
+              testID="onboarding-name"
               value={state.householdName}
               onChangeText={(householdName) => setState((prev) => ({ ...prev, householdName }))}
               placeholder="np. Rodzina Kowalskich"
@@ -239,10 +240,11 @@ export default function Onboarding(): React.JSX.Element {
               accessibilityLabel="Nazwa rodziny"
             />
 
-            <Button onPress={() => goTo(2)} style={styles.cta}>
+            <Button testID="onboarding-next" onPress={() => goTo(2)} style={styles.cta}>
               Dalej
             </Button>
             <Pressable
+              testID="onboarding-skip"
               onPress={() => goTo(3)}
               accessibilityRole="button"
               accessibilityLabel="Pomiń"
@@ -312,7 +314,7 @@ export default function Onboarding(): React.JSX.Element {
               })}
             </View>
 
-            <Button onPress={() => goTo(3)} style={styles.cta}>
+            <Button testID="onboarding-next" onPress={() => goTo(3)} style={styles.cta}>
               Dalej
             </Button>
             <Pressable
@@ -381,6 +383,7 @@ export default function Onboarding(): React.JSX.Element {
 
             <View style={styles.customRow}>
               <TextInput
+                testID="onboarding-custom-restriction"
                 value={customRestriction}
                 onChangeText={setCustomRestriction}
                 onSubmitEditing={addCustomRestriction}
@@ -402,7 +405,7 @@ export default function Onboarding(): React.JSX.Element {
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <Button onPress={finish} loading={submitting} style={styles.cta}>
+            <Button testID="onboarding-finish" onPress={finish} loading={submitting} style={styles.cta}>
               Zakończ
             </Button>
             <Pressable
