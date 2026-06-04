@@ -451,3 +451,12 @@ export async function addManualItem(input: NewShoppingListItem): Promise<Shoppin
   if (!row) throw new Error('Failed to add item')
   return row
 }
+
+export async function deleteItem(itemId: string): Promise<{ id: string }> {
+  const [row] = await db
+    .delete(shoppingListItems)
+    .where(eq(shoppingListItems.id, itemId))
+    .returning({ id: shoppingListItems.id })
+  if (!row) throw new Error(`Item ${itemId} not found`)
+  return row
+}

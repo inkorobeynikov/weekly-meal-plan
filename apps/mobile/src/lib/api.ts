@@ -392,6 +392,13 @@ export function updateShoppingItem(
   }).then((res) => res.item);
 }
 
+// DELETE /api/shopping/items/:itemId -> { deleted }. Removes a shopping item.
+export function deleteShoppingItem(itemId: string): Promise<{ id: string }> {
+  return apiFetch<{ deleted: { id: string } }>(`/api/shopping/items/${itemId}`, {
+    method: 'DELETE',
+  }).then((res) => res.deleted);
+}
+
 // POST /api/shopping/lists/:listId/items -> { item }. Adds a manual item.
 export function addShoppingItem(
   listId: string,

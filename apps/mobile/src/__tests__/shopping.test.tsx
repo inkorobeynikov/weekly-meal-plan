@@ -21,7 +21,10 @@ const mockUpdateShoppingItem: jest.Mock<
 > = jest.fn();
 const mockAddShoppingItem: jest.Mock<Promise<ShoppingListItem>, [string, AddShoppingItemInput]> =
   jest.fn();
+const mockDeleteShoppingItem: jest.Mock<Promise<{ id: string }>, [string]> = jest.fn();
 const mockApiFetch: jest.Mock<Promise<unknown>, [string, unknown?]> = jest.fn();
+const mockGeneratePlan: jest.Mock<Promise<unknown>, []> = jest.fn();
+const mockGetWeeklyPlan: jest.Mock<Promise<unknown>, []> = jest.fn();
 
 jest.mock('../lib/api', () => ({
   getShoppingList: (): Promise<ShoppingListWithItems | null> => mockGetShoppingList(),
@@ -29,7 +32,11 @@ jest.mock('../lib/api', () => ({
     mockUpdateShoppingItem(id, status, replacementText),
   addShoppingItem: (listId: string, input: AddShoppingItemInput): Promise<ShoppingListItem> =>
     mockAddShoppingItem(listId, input),
+  deleteShoppingItem: (itemId: string): Promise<{ id: string }> => mockDeleteShoppingItem(itemId),
   apiFetch: (path: string, options?: unknown): Promise<unknown> => mockApiFetch(path, options),
+  // Pulled in transitively by usePlanGeneration (new-week flow).
+  generatePlan: (): Promise<unknown> => mockGeneratePlan(),
+  getWeeklyPlan: (): Promise<unknown> => mockGetWeeklyPlan(),
 }));
 
 // react-native-confetti-cannon → no-op component (avoids native timers).
@@ -85,7 +92,10 @@ beforeEach(() => {
     .mockImplementation((_listId, input) =>
       Promise.resolve(makeItem({ id: 'new-1', name: input.name })),
     );
+  mockDeleteShoppingItem.mockReset().mockResolvedValue({ id: 'i1' });
   mockApiFetch.mockReset().mockResolvedValue(null);
+  mockGeneratePlan.mockReset().mockResolvedValue({ status: 'generating' });
+  mockGetWeeklyPlan.mockReset();
 });
 
 // --- tests -------------------------------------------------------------------
@@ -187,6 +197,36 @@ describe('ShoppingScreen (W03 + W08)', () => {
 
     // Optimistic append renders the new row immediately.
     await waitFor(() => expect(getByText('Masło')).toBeTruthy());
-    expect(mockAddShoppingItem).toHaveBeenCalledWith('sl1', { name: 'Masło' });
+    // A category is sent (defaults to "Inne" unless the user picks one).
+    expect(mockAddShoppingItem).toHaveBeenCalledWith('sl1', { name: 'Masło', category: 'Inne' });
+  });
+
+  it('lets the user pick a category for a manually added item', async () => {
+    const { getByLabelText, getByText } = render(<ShoppingScreen />);
+
+    await waitFor(() => expect(getByText('Ziemniaki')).toBeTruthy());
+
+    fireEvent.press(getByLabelText('Dodaj ręcznie'));
+    fireEvent.changeText(getByLabelText('Nazwa produktu'), 'Marchew');
+    fireEvent.press(getByLabelText('Kategoria: Warzywa'));
+    fireEvent.press(getByText('Dodaj'));
+
+    await waitFor(() =>
+      expect(mockAddShoppingItem).toHaveBeenCalledWith('sl1', {
+        name: 'Marchew',
+        category: 'Warzywa',
+      }),
+    );
+  });
+
+  it('deletes a row via the per-item delete action', async () => {
+    const { getByLabelText, getByText } = render(<ShoppingScreen />);
+
+    await waitFor(() => expect(getByText('Ziemniaki')).toBeTruthy());
+    fireEvent.press(getByLabelText('Usuń: Ziemniaki'));
+
+    // Optimistically removed from the list.
+    await waitFor(() => expect(() => getByText('Ziemniaki')).toThrow());
+    expect(mockDeleteShoppingItem).toHaveBeenCalledWith('i1');
   });
 });
