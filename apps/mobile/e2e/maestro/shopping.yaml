@@ -27,7 +27,12 @@ env:
 - tapOn:
     id: "shopping-add-input"
 - inputText: "Masło"
-- hideKeyboard
+# Android-only — see subflows/login-email.yaml for why iOS skips this.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "shopping-add-confirm"
 - assertVisible:

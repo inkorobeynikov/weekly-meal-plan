@@ -13,10 +13,21 @@ appId: com.mealplanner.app
 - inputText: "e2e@example.com"
 # Dismiss the keyboard before the next field — otherwise it can cover the
 # password input and the text lands in the still-focused email field.
-- hideKeyboard
+# Android-only: iOS has no standard keyboard-dismiss action (Maestro's
+# `hideKeyboard` throws on the iOS Simulator), and these short forms don't get
+# covered there.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "login-password"
 - inputText: "haslo12345"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "login-submit"

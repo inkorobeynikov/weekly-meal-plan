@@ -67,7 +67,12 @@ env:
 - tapOn:
     id: "feedback-note"
 - inputText: "Więcej dań jednogarnkowych."
-- hideKeyboard
+# Android-only — see subflows/login-email.yaml for why iOS skips this.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "feedback-submit"
 - extendedWaitUntil:

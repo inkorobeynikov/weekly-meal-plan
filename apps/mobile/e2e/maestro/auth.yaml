@@ -33,15 +33,30 @@ env:
 # Dismiss the keyboard between every field — on the 3-field register screen it
 # otherwise covers the lower inputs, so the tap misses and text lands in the
 # previously-focused field (e.g. email + password concatenated).
-- hideKeyboard
+# Android-only: iOS has no standard keyboard-dismiss action (Maestro's
+# `hideKeyboard` throws on the iOS Simulator). If a lower field turns out to be
+# covered on iOS, scroll it into view before tapping instead.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "register-email"
 - inputText: "jan@przyklad.pl"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "register-password"
 - inputText: "haslo12345"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
 - tapOn:
     id: "register-submit"
 
