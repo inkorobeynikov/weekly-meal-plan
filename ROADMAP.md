@@ -97,3 +97,10 @@
 - [x] Rewired senders to push: `plan-generate` + `retention-trigger` + new `feedback-reminder` Inngest cron (`TZ=Europe/Warsaw 0 18`, was the bot job); removed the Telegram webhook route and dropped `@meal-planner/bot` + `grammy` from `apps/web`
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
+
+## Phase 13 — Bot dormant: dev flow + deploy ✅ done
+
+- [x] Removed `@meal-planner/bot` from the local dev fan-out — root `pnpm dev` and `scripts/dev-tunnel.ts` both run `turbo dev --filter=!@meal-planner/bot`, so `pnpm dev` / `pnpm dev:tunnel` bring up web (+ Inngest, tunnel) without launching the bot
+- [x] Prod no longer serves the bot: `vercel.json` already builds only `@meal-planner/web`; the webhook route was removed in Phase 12 and there is no `setWebhook` call anywhere, so with no updates delivered the channel is fully idle
+- [x] Decoupling confirmed — zero `@meal-planner/bot` / `grammy` imports remain in `apps/web` (cleared in Phase 12 / Block B4)
+- [x] `apps/bot` source, `households.telegramChatId`, and the (now-removed) webhook plumbing left untouched as a fallback channel; `pnpm typecheck` green across all 9 packages

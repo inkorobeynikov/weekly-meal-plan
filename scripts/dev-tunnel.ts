@@ -1,14 +1,16 @@
 /**
  * Dev orchestrator — one command to bring up the whole local stack:
  *   1. cloudflared quick tunnel → public HTTPS URL for the web app
- *   2. turbo dev (Next.js web + grammY bot), with NEXT_PUBLIC_APP_URL set to the
- *      tunnel URL so the bot builds reachable Mini App links/buttons
+ *   2. turbo dev (Next.js web only — the grammY bot is dormant and excluded
+ *      from the fan-out), with NEXT_PUBLIC_APP_URL set to the tunnel URL so the
+ *      web app builds reachable public links/buttons
  *   3. Inngest Dev Server, pointed at the app's /api/inngest endpoint so
  *      background functions (plan.generate, shopping.generate, …) actually run
  *
- * Why the tunnel: Telegram Mini Apps must be served over a public HTTPS origin;
- * localhost is unreachable from a phone. The quick tunnel needs no Cloudflare
- * account and produces a fresh https://<random>.trycloudflare.com URL each run.
+ * Why the tunnel: the web app (and its mobile/push integrations) must be served
+ * over a public HTTPS origin; localhost is unreachable from a phone. The quick
+ * tunnel needs no Cloudflare account and produces a fresh
+ * https://<random>.trycloudflare.com URL each run.
  *
  * Why Inngest is pointed at localhost (not the tunnel): the Dev Server runs on
  * your machine and reaches the Next.js app directly over localhost.
@@ -80,7 +82,7 @@ async function main(): Promise<void> {
   // the Inngest Dev Server output in the same terminal. pnpm/npx are .cmd shims
   // on Windows, so they need a shell; passing one command string (no args array)
   // avoids the DEP0190 deprecation warning.
-  const dev = spawn('pnpm exec turbo dev --ui=stream', {
+  const dev = spawn('pnpm exec turbo dev --filter=!@meal-planner/bot --ui=stream', {
     stdio: 'inherit',
     shell: true,
     env: { ...process.env, NEXT_PUBLIC_APP_URL: url },

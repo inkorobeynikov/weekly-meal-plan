@@ -2,7 +2,7 @@
   "name": "meal-planner",
   "private": true,
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=!@meal-planner/bot",
     "dev:tunnel": "tsx scripts/dev-tunnel.ts",
     "build": "turbo build",
     "lint": "turbo lint",
