@@ -3,12 +3,17 @@ import { Redirect, Tabs } from 'expo-router';
 import { tokens } from '@meal-planner/ui-native';
 
 import { useSession } from '../../src/lib/auth';
+import { usePushRegistration } from '../../src/lib/push';
 
 // Bottom tab navigator. Guards the whole authenticated area: if there is no
 // session, redirect to login. (While the session is still resolving we render
 // nothing rather than flashing the tabs.)
 export default function TabsLayout(): React.JSX.Element | null {
   const { data: session, isPending } = useSession();
+
+  // Once authenticated, request notification permission and register this
+  // device's Expo push token with the backend (replaces the Telegram channel).
+  usePushRegistration(Boolean(session));
 
   if (isPending) {
     return null;

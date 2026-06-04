@@ -88,3 +88,12 @@
 - [x] Primary CTA → forest green (was near-black ink); `TabBar` active tint → forest green with a lime accent dot
 - [x] Retuned `Placeholder` food tiles from beige to green/lime; replaced remaining hardcoded beige in `(app)/layout.tsx`, `auth-gate.tsx`, family `SegmentedControl`
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native (8 suites/21) + mobile (13 suites/41) tests pass
+
+## Phase 12 — Push notifications (bot dormant) ✅ done
+
+- [x] `push_tokens` table (`packages/db`) — `householdId` FK, nullable `userId`, unique `token`, `platform`, timestamps; migration `0003_wooden_korvac.sql`. `households.telegramChatId` kept as-is (bot dormant)
+- [x] `notificationService.notifyHousehold()` (`packages/domain`) — sends via `expo-server-sdk`, chunks messages, prunes `DeviceNotRegistered` tokens; domain imports neither `next` nor `grammy`
+- [x] `POST /api/push/register` (`withAuth`, Zod body, upsert on token) + mobile registration (permission → Expo token → POST on authenticated app-start) and notification-tap routing (plan-ready → plan tab, feedback → feedback screen)
+- [x] Rewired senders to push: `plan-generate` + `retention-trigger` + new `feedback-reminder` Inngest cron (`TZ=Europe/Warsaw 0 18`, was the bot job); removed the Telegram webhook route and dropped `@meal-planner/bot` + `grammy` from `apps/web`
+- [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
+- [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass

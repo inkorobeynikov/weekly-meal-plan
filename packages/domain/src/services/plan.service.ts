@@ -1,7 +1,8 @@
-import { and, desc, eq, gte, gt, inArray, isNotNull, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, gt, inArray, lt, ne } from "drizzle-orm";
 import {
   db,
   households,
+  pushTokens,
   weeklyPlans,
   plannedMeals,
   recipes,
@@ -665,11 +666,12 @@ export async function getCurrentPlanForHousehold(
 
 export interface RetentionCandidate {
   householdId: string;
-  telegramChatId: string;
 }
 
 // Week-2 retention: households created exactly 7 days ago that approved their
 // first plan but haven't started a new one (no plan created in the last 3 days).
+// Recipients are now reached via push, so we require at least one push token
+// instead of a Telegram chat id (the bot is dormant).
 export async function getWeekTwoRetentionCandidates(
   referenceDate: Date = new Date(),
 ): Promise<RetentionCandidate[]> {
@@ -679,12 +681,14 @@ export async function getWeekTwoRetentionCandidates(
   const sevenDaysAgoEnd = new Date(sevenDaysAgoStart.getTime() + dayMs);
   const threeDaysAgo = new Date(referenceDate.getTime() - 3 * dayMs);
 
+  // Households created in the window that have at least one registered push
+  // token. The inner join + distinct collapses multiple tokens to one row.
   const newHouseholds = await db
-    .select({ id: households.id, telegramChatId: households.telegramChatId })
+    .selectDistinct({ id: households.id })
     .from(households)
+    .innerJoin(pushTokens, eq(pushTokens.householdId, households.id))
     .where(
       and(
-        isNotNull(households.telegramChatId),
         gte(households.createdAt, sevenDaysAgoStart),
         lt(households.createdAt, sevenDaysAgoEnd),
       ),
@@ -692,7 +696,6 @@ export async function getWeekTwoRetentionCandidates(
 
   const candidates: RetentionCandidate[] = [];
   for (const h of newHouseholds) {
-    if (!h.telegramChatId) continue;
     const plans = await db
       .select({ status: weeklyPlans.status, createdAt: weeklyPlans.createdAt })
       .from(weeklyPlans)
@@ -701,7 +704,7 @@ export async function getWeekTwoRetentionCandidates(
     const approvedCount = plans.filter((p) => p.status === "approved").length;
     const hasRecentPlan = plans.some((p) => p.createdAt >= threeDaysAgo);
     if (approvedCount === 1 && !hasRecentPlan) {
-      candidates.push({ householdId: h.id, telegramChatId: h.telegramChatId });
+      candidates.push({ householdId: h.id });
     }
   }
   return candidates;

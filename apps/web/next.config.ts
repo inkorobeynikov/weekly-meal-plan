@@ -45,7 +45,6 @@ const config: NextConfig = {
   ],
   transpilePackages: [
     "@meal-planner/ai",
-    "@meal-planner/bot",
     "@meal-planner/db",
     "@meal-planner/domain",
     "@meal-planner/shared",
