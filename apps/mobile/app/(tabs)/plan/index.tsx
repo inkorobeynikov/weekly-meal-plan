@@ -403,6 +403,7 @@ export default function PlanScreen(): React.JSX.Element {
                       testID={`plan-meal-${meal.mealType}`}
                       swapTestID={`plan-swap-${meal.mealType}`}
                       name={recipe.title}
+                      placeholderSeed={recipe.title}
                       cookTimeMinutes={recipe.timeMinutes}
                       portions={meal.servings}
                       onPress={() => openRecipe(recipe.id)}
