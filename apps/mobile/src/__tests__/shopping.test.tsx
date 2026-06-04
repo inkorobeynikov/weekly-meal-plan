@@ -59,6 +59,7 @@ function makeItem(over: Partial<ShoppingListItem> & Pick<ShoppingListItem, 'id' 
     status: 'pending',
     replacementText: null,
     promoHintId: null,
+    estimatedPriceGrosze: null,
     ...over,
   };
 }
@@ -95,7 +96,12 @@ beforeEach(() => {
   mockDeleteShoppingItem.mockReset().mockResolvedValue({ id: 'i1' });
   mockApiFetch.mockReset().mockResolvedValue(null);
   mockGeneratePlan.mockReset().mockResolvedValue({ status: 'generating' });
-  mockGetWeeklyPlan.mockReset();
+  // The shopping screen loads the current plan in parallel to map recipe titles
+  // onto shopping lines (F4 source-recipe labels). Default to an empty plan.
+  mockGetWeeklyPlan.mockReset().mockResolvedValue({
+    plan: null,
+    meals: [],
+  });
 });
 
 // --- tests -------------------------------------------------------------------
@@ -120,6 +126,60 @@ describe('ShoppingScreen (W03 + W08)', () => {
     expect(getByText('Mięso')).toBeTruthy();
     expect(getByText('Mleko')).toBeTruthy();
     expect(getByText('Schab')).toBeTruthy();
+  });
+
+  // F4: each line surfaces the source recipe, needed-by day, promo retailer and
+  // its cost estimate; the footer sums the estimates into a total.
+  it('surfaces source recipe, needed-by, promo and cost estimate (F4)', async () => {
+    mockGetWeeklyPlan.mockResolvedValue({
+      plan: { id: 'wp1' },
+      meals: [{ recipe: { id: 'rec-1', title: 'Schabowy z ziemniakami' } }],
+    });
+    mockGetShoppingList.mockResolvedValue(
+      makeList([
+        makeItem({
+          id: 'i1',
+          name: 'Ziemniaki',
+          category: 'Warzywa',
+          quantity: '1',
+          unit: 'kg',
+          relatedRecipeIds: ['rec-1'],
+          neededByDate: '2026-06-03',
+          estimatedPriceGrosze: 450,
+          promoHints: [
+            {
+              id: 'p1',
+              retailer: 'Biedronka',
+              productName: 'Ziemniaki',
+              normalizedProductName: 'ziemniaki',
+              priceText: '2,99',
+              startDate: null,
+              endDate: null,
+              conditionsText: null,
+              requiresLoyaltyApp: false,
+              availabilityScope: 'nationwide',
+              sourceUrl: null,
+              confidenceScore: 90,
+              createdAt: '2026-06-01T00:00:00.000Z',
+            },
+          ],
+        }),
+      ]),
+    );
+
+    const { getByText, getAllByText, getByTestId } = render(<ShoppingScreen />);
+
+    await waitFor(() => expect(getByText('Ziemniaki')).toBeTruthy());
+    // Source recipe label.
+    expect(getByTestId('shopping-source-i1')).toBeTruthy();
+    expect(getByText('Schabowy z ziemniakami')).toBeTruthy();
+    // Needed-by day + promo chips.
+    expect(getByTestId('shopping-neededby-i1')).toBeTruthy();
+    expect(getByTestId('shopping-promo-i1')).toBeTruthy();
+    expect(getByText('Promocja: Biedronka')).toBeTruthy();
+    // Per-line price + footer total (single priced line → both show the value).
+    expect(getAllByText('4,50 zł').length).toBe(2);
+    expect(getByText('Szacowany koszt:')).toBeTruthy();
   });
 
   it('shows the friendly empty state when there is no active list', async () => {

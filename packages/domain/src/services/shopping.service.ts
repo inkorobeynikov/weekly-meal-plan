@@ -218,6 +218,9 @@ interface RawIngredientUsage {
   scaledQuantity: number
   recipeId: string
   neededByDate: string // ISO YYYY-MM-DD
+  // F4 cost estimate: this ingredient's share of the recipe's scaled price, in
+  // GROSZE (integer minor units). null when the recipe carries no estimate.
+  priceShareGrosze: number | null
 }
 
 interface AggregatedItem {
@@ -229,6 +232,9 @@ interface AggregatedItem {
   neededByDate: string
   buyTiming: BuyTiming
   relatedRecipeIds: string[]
+  // F4: summed cost estimate for this aggregated line, in GROSZE. null when none
+  // of the contributing recipes carried a price estimate.
+  estimatedPriceGrosze: number | null
 }
 
 function aggregate(usages: RawIngredientUsage[]): AggregatedItem[] {
@@ -242,6 +248,11 @@ function aggregate(usages: RawIngredientUsage[]): AggregatedItem[] {
     nonBaseQuantity: number // sum when not dimensional; quantity stays as number
     recipeIds: Set<string>
     earliestDate: string
+    // F4: running sum of priced contributions (grosze) + whether any usage in
+    // this bucket actually carried a price, so a fully-unpriced line stays null
+    // rather than collapsing to 0 zł.
+    priceGrosze: number
+    anyPriced: boolean
   }
   const buckets = new Map<string, Bucket>()
 
@@ -261,6 +272,8 @@ function aggregate(usages: RawIngredientUsage[]): AggregatedItem[] {
         nonBaseQuantity: 0,
         recipeIds: new Set(),
         earliestDate: u.neededByDate,
+        priceGrosze: 0,
+        anyPriced: false,
       }
       buckets.set(key, b)
     }
@@ -271,6 +284,10 @@ function aggregate(usages: RawIngredientUsage[]): AggregatedItem[] {
     }
     b.recipeIds.add(u.recipeId)
     if (u.neededByDate < b.earliestDate) b.earliestDate = u.neededByDate
+    if (u.priceShareGrosze !== null) {
+      b.priceGrosze += u.priceShareGrosze
+      b.anyPriced = true
+    }
   }
 
   const items: AggregatedItem[] = []
@@ -296,6 +313,7 @@ function aggregate(usages: RawIngredientUsage[]): AggregatedItem[] {
       neededByDate: b.earliestDate,
       buyTiming,
       relatedRecipeIds: [...b.recipeIds],
+      estimatedPriceGrosze: b.anyPriced ? Math.round(b.priceGrosze) : null,
     })
   }
   return items
@@ -362,7 +380,17 @@ export async function generateShoppingList(planId: string): Promise<ShoppingList
     const recipeServings = recipe.servings > 0 ? recipe.servings : 1
     const scaleFactor = meal.servings / recipeServings
     const mealDate = String(meal.date)
-    for (const ing of recipe.ingredientsJson as Ingredient[]) {
+    const ingredientList = recipe.ingredientsJson as Ingredient[]
+    const namedCount = ingredientList.filter((i) => (i.name?.trim() ?? '') !== '').length
+    // F4 cost estimate: spread the recipe's whole-dish price (scaled to the
+    // meal's servings) evenly across its named ingredients, in GROSZE. null when
+    // the recipe has no estimate so the line stays unpriced rather than 0 zł.
+    const recipePrice = recipe.priceEstimateGrosze
+    const perIngredientShare =
+      recipePrice !== null && recipePrice !== undefined && namedCount > 0
+        ? (recipePrice * scaleFactor) / namedCount
+        : null
+    for (const ing of ingredientList) {
       const name = ing.name?.trim() ?? ''
       if (!name) continue
       const quantity = Number.isFinite(ing.quantity) ? ing.quantity : 0
@@ -373,6 +401,7 @@ export async function generateShoppingList(planId: string): Promise<ShoppingList
         scaledQuantity: quantity * scaleFactor,
         recipeId: recipe.id,
         neededByDate: mealDate,
+        priceShareGrosze: perIngredientShare,
       })
     }
   }
@@ -401,6 +430,7 @@ export async function generateShoppingList(planId: string): Promise<ShoppingList
       neededByDate: a.neededByDate,
       buyTiming: a.buyTiming,
       relatedRecipeIds: a.relatedRecipeIds,
+      estimatedPriceGrosze: a.estimatedPriceGrosze,
       status: 'pending' satisfies ItemStatus,
     }))
 

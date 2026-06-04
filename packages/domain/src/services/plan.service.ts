@@ -11,6 +11,7 @@ import {
   type Recipe,
   type NewRecipe,
 } from "@meal-planner/db";
+import { deriveMealBadges, type MealBadge } from "@meal-planner/shared";
 import {
   getOpenAI,
   MODELS,
@@ -117,8 +118,39 @@ function recipeToNewRecipe(recipe: AIRecipe, householdId: string): NewRecipe {
     childFriendlyNotes: recipe.childFriendlyNotes ?? null,
     allergenNotes: recipe.allergenNotes ?? null,
     costLevel: recipe.costLevel,
+    // F4 "intelligent surface" — LLM-produced fields, already Zod-validated by
+    // RecipeSchema before reaching here.
+    isTryNew: recipe.isTryNew,
+    priceEstimateGrosze: recipe.priceEstimateGrosze ?? null,
     validationStatus: "valid",
   };
+}
+
+// F4: derive the per-meal badge set from the recipe flags + meal type. Pure
+// logic lives in @meal-planner/shared so the mobile UI uses identical rules.
+function deriveBadgesForMeal(
+  recipe: AIRecipe,
+  mealType: AIPlannedMeal["mealType"],
+): MealBadge[] {
+  return deriveMealBadges({
+    isKidFriendly: recipe.isKidFriendly,
+    isGoodForLeftovers: recipe.isGoodForLeftovers,
+    isTryNew: recipe.isTryNew,
+    isLeftoverMeal: mealType === "lunch_leftover",
+  });
+}
+
+// F4: scale a recipe's whole-dish grosze estimate to the meal's actual servings
+// so the shopping-list cost reflects how much is really cooked. Returns null
+// when the recipe has no estimate. Integer grosze in/out — never floats.
+function scalePriceGrosze(
+  priceEstimateGrosze: number | null | undefined,
+  recipeServings: number,
+  mealServings: number,
+): number | null {
+  if (priceEstimateGrosze === null || priceEstimateGrosze === undefined) return null;
+  const base = recipeServings > 0 ? recipeServings : 1;
+  return Math.round((priceEstimateGrosze * mealServings) / base);
 }
 
 async function callAIForWeeklyPlan(
@@ -229,6 +261,9 @@ export async function generateWeeklyPlan(
         recipeId: recipeRow.id,
         leftoversPlanned: meal.leftoversPlanned,
         servings: meal.recipe.servings,
+        // F4: persist the derived per-dish badge set so the UI renders it
+        // without re-deriving on every read.
+        badgesJson: deriveBadgesForMeal(meal.recipe, meal.mealType),
       })
       .returning();
     if (!mealRow) throw new Error("Failed to insert planned_meal row");
@@ -256,6 +291,31 @@ export async function approvePlan(planId: string): Promise<WeeklyPlan> {
     householdId: row.householdId,
   });
   return row;
+}
+
+// F4 "mark cooked" (W02). Marks every planned meal for this recipe within a
+// given plan as cooked (idempotent — toggles a timestamp on). A recipe can be
+// served as both a dinner and a next-day leftover, so all matching rows flip.
+export interface MarkMealCookedInput {
+  recipeId: string;
+  planId: string;
+  cooked: boolean;
+}
+
+export async function markMealCooked(
+  input: MarkMealCookedInput,
+): Promise<{ updated: number }> {
+  const rows = await db
+    .update(plannedMeals)
+    .set({ cookedAt: input.cooked ? new Date() : null })
+    .where(
+      and(
+        eq(plannedMeals.weeklyPlanId, input.planId),
+        eq(plannedMeals.recipeId, input.recipeId),
+      ),
+    )
+    .returning({ id: plannedMeals.id });
+  return { updated: rows.length };
 }
 
 export interface ReplaceMealInput {
@@ -474,7 +534,12 @@ export async function replaceMeal(
 
   const [updatedMeal] = await db
     .update(plannedMeals)
-    .set({ recipeId: recipeRow.id, servings: newRecipe.servings })
+    .set({
+      recipeId: recipeRow.id,
+      servings: newRecipe.servings,
+      // F4: re-derive badges for the swapped dish so they stay accurate.
+      badgesJson: deriveBadgesForMeal(newRecipe, existingMeal.mealType),
+    })
     .where(eq(plannedMeals.id, existingMeal.id))
     .returning();
   if (!updatedMeal) throw new Error("Failed to update planned_meal row");
@@ -506,7 +571,12 @@ export async function replaceMeal(
       if (newRecipe.isGoodForLeftovers) {
         await db
           .update(plannedMeals)
-          .set({ recipeId: recipeRow.id, servings: newRecipe.servings })
+          .set({
+            recipeId: recipeRow.id,
+            servings: newRecipe.servings,
+            // These rows are lunch_leftover servings of the new dinner.
+            badgesJson: deriveBadgesForMeal(newRecipe, "lunch_leftover"),
+          })
           .where(inArray(plannedMeals.id, ids));
         leftoversRepointed = ids.length;
       } else {

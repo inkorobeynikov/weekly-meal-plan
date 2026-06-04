@@ -52,6 +52,8 @@ function makeRecipe(over: Partial<Recipe>): Recipe {
     childFriendlyNotes: null,
     allergenNotes: null,
     costLevel: 'cheap',
+    isTryNew: false,
+    priceEstimateGrosze: null,
     validationStatus: 'valid',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...over,
@@ -68,6 +70,8 @@ function makeMeal(id: string, recipe: Recipe): MealWithRecipe {
       recipeId: recipe.id,
       leftoversPlanned: false,
       servings: 4,
+      badgesJson: null,
+      cookedAt: null,
     },
     recipe,
   };
