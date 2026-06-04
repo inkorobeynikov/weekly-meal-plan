@@ -366,6 +366,7 @@ export default function PlanScreen(): React.JSX.Element {
                     <MealCard
                       testID={`plan-meal-${meal.mealType}`}
                       name={recipe.title}
+                      placeholderSeed={recipe.title}
                       cookTimeMinutes={recipe.timeMinutes}
                       portions={meal.servings}
                       onPress={() => openRecipe(recipe.id)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -7,6 +7,7 @@ import { useLocalSearchParams } from 'expo-router';
 import {
   Badge,
   Button,
+  RecipePlaceholder,
   SkeletonBlock,
   Tag,
   fontSize,
@@ -23,7 +24,8 @@ import {
   type SwapMealRef,
 } from '@/components/RecipeSwapSheet';
 
-// Blurhash placeholder for the hero image while the real photo loads.
+// Blurhash placeholder for the hero image while the real photo loads (used only
+// when an actual imageUri is present — otherwise RecipePlaceholder is shown).
 const HERO_BLURHASH = 'L6Pj0^jE.AyE_3t7t7R**0o#DgR4';
 
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
@@ -128,14 +130,22 @@ export default function RecipeDetailScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.body}>
-        <Image
-          source={heroUri ? { uri: heroUri } : undefined}
-          style={styles.hero}
-          contentFit="cover"
-          placeholder={{ blurhash: HERO_BLURHASH }}
-          transition={250}
-          accessibilityIgnoresInvertColors
-        />
+        {heroUri ? (
+          <Image
+            source={{ uri: heroUri }}
+            style={styles.hero}
+            contentFit="cover"
+            placeholder={{ blurhash: HERO_BLURHASH }}
+            transition={250}
+            accessibilityIgnoresInvertColors
+          />
+        ) : (
+          <RecipePlaceholder
+            seed={recipe.title}
+            height={240}
+            style={styles.heroPlaceholder}
+          />
+        )}
 
         <View style={styles.content}>
           <Text style={styles.title}>{recipe.title}</Text>
@@ -159,21 +169,27 @@ export default function RecipeDetailScreen(): React.JSX.Element {
             </View>
           )}
 
-          {/* Segmented tabs */}
+          {/* Segmented tabs — real Pressables for a proper hit-area + press feedback */}
           <View style={styles.tabBar}>
             {TABS.map(({ key, label }) => {
               const active = tab === key;
               return (
-                <Text
+                <Pressable
                   key={key}
                   testID={`recipe-tab-${key}`}
                   onPress={() => setTab(key)}
-                  accessibilityRole="button"
+                  accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
-                  style={[styles.tab, active && styles.tabActive]}
+                  style={({ pressed }) => [
+                    styles.tab,
+                    active && styles.tabActive,
+                    pressed && styles.tabPressed,
+                  ]}
                 >
-                  {label}
-                </Text>
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                    {label}
+                  </Text>
+                </Pressable>
               );
             })}
           </View>
@@ -190,18 +206,21 @@ export default function RecipeDetailScreen(): React.JSX.Element {
         </View>
       </ScrollView>
 
-      {/* Sticky bottom CTA. Disabled when there is no plan context to swap. */}
-      <View style={styles.ctaBar}>
-        <Button
-          variant="primary"
-          disabled={!canSwap}
-          onPress={() => setSwapOpen(true)}
-          accessibilityLabel="Zamień w planie"
-          testID="recipe-swap-cta"
-        >
-          Zamień w planie
-        </Button>
-      </View>
+      {/* Sticky bottom CTA. Hidden entirely when there is no plan context to swap
+          (arriving from the recipe library). An invisible disabled button would be
+          a dead-end affordance — better to show nothing at all. */}
+      {canSwap ? (
+        <View style={styles.ctaBar}>
+          <Button
+            variant="primary"
+            onPress={() => setSwapOpen(true)}
+            accessibilityLabel="Zamień w planie"
+            testID="recipe-swap-cta"
+          >
+            Zamień w planie
+          </Button>
+        </View>
+      ) : null}
 
       <RecipeSwapSheet
         visible={swapOpen}
@@ -331,6 +350,11 @@ const styles = StyleSheet.create({
     height: 240,
     backgroundColor: tokens.surface2,
   },
+  // RecipePlaceholder hero — same dimensions, no extra background needed because
+  // the component fills its own background.
+  heroPlaceholder: {
+    borderRadius: 0,
+  },
 
   content: {
     padding: spacing['2xl'],
@@ -376,16 +400,26 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    textAlign: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: tokens.muted,
     overflow: 'hidden',
   },
   tabActive: {
     backgroundColor: tokens.surface,
+  },
+  tabPressed: {
+    opacity: 0.7,
+  },
+  tabText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: tokens.muted,
+    textAlign: 'center',
+  },
+  tabTextActive: {
     color: tokens.ink,
   },
 
