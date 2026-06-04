@@ -1,5 +1,6 @@
-# Recipe Swap (W07): open the swap sheet from the review screen, wait for the
-# AI alternatives to load, re-roll, then pick one.
+# Recipe Swap (W07): open the swap sheet from the review screen, type a reason,
+# and confirm — the existing replace route performs the AI swap server-side
+# (A4 Variant 1 "reason → replace" flow; no alternatives list).
 appId: com.mealplanner.app
 env:
   MOCK_URL: "http://localhost:4010"
@@ -26,24 +27,17 @@ env:
       id: "swap-sheet"
     timeout: 15000
 - assertVisible:
-    text: "Propozycje"
+    id: "swap-reason"
+- assertVisible:
+    id: "swap-confirm"
 
-# --- Alternatives load (3 from the mock) ---
-- extendedWaitUntil:
-    visible:
-      id: "swap-alt-r-alt-1"
-    timeout: 15000
-# Re-roll proposes a fresh set.
+# --- Type a reason and confirm → replace route runs, sheet closes ---
 - tapOn:
-    id: "swap-reroll"
-- extendedWaitUntil:
-    visible:
-      id: "swap-alt-r-alt-2"
-    timeout: 15000
-
-# --- Select an alternative → sheet closes, back on review ---
+    id: "swap-reason"
+- inputText: "za ciężkie"
+- hideKeyboard
 - tapOn:
-    id: "swap-alt-r-alt-1"
+    id: "swap-confirm"
 - extendedWaitUntil:
     visible:
       text: "Przejrzyj plan"

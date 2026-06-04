@@ -187,7 +187,6 @@ export default function PlanReviewScreen(): React.JSX.Element {
     setSwapMeal({
       planId,
       mealId: m.meal.id,
-      recipeId: m.recipe.id,
       name: m.recipe.title,
       dayLabel,
       mealTypeLabel: mealTypeLabel(m.meal.mealType),
