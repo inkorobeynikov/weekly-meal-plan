@@ -324,14 +324,18 @@ const routes: Route[] = [
     pattern: /^\/api\/plans\/([^/]+)\/meals\/([^/]+)\/replace$/,
     handle: (_req, res, params) => {
       const [, mealId] = params;
+      // Mirror the real route POST /api/plans/:planId/meals/:mealId/replace,
+      // which returns { meal }.
       sendJson(res, 200, {
-        id: mealId ?? 'm-lunch-0',
-        weeklyPlanId: PLAN_ID,
-        date: PLAN_DATES[0],
-        mealType: 'lunch',
-        recipeId: 'r-alt-1',
-        leftoversPlanned: false,
-        servings: 4,
+        meal: {
+          id: mealId ?? 'm-lunch-0',
+          weeklyPlanId: PLAN_ID,
+          date: PLAN_DATES[0],
+          mealType: 'lunch',
+          recipeId: 'r-alt-1',
+          leftoversPlanned: false,
+          servings: 4,
+        },
       });
     },
   },
@@ -367,7 +371,8 @@ const routes: Route[] = [
             replacementText: asString(body.replacementText) ?? null,
             promoHintId: null,
           };
-      sendJson(res, 200, item);
+      // Mirror the real route PATCH /api/shopping/items/:itemId → { item }.
+      sendJson(res, 200, { item });
     },
   },
   {
@@ -392,7 +397,8 @@ const routes: Route[] = [
         promoHintId: null,
       };
       state.addedItems.push(item);
-      sendJson(res, 200, item);
+      // Mirror the real route POST /api/shopping/lists/:listId/items → { item }.
+      sendJson(res, 200, { item });
     },
   },
 

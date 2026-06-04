@@ -2,16 +2,14 @@ import { useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import {
-  Badge,
   Button,
   MealCard,
-  SkeletonBlock,
   fontSize,
   radii,
   shadowStyle,
@@ -19,19 +17,19 @@ import {
   tokens,
 } from '@meal-planner/ui-native';
 
-import { apiFetch } from '../lib/api';
+import { replaceMeal } from '../lib/api';
 
-// W07 — Recipe Swap bottom sheet.
+// W07 — Recipe Swap bottom sheet (A4 Variant 1: "reason → replace").
 //
-// Lets the user replace a single planned meal with an AI-proposed alternative.
-// Alternatives are fetched lazily when the sheet opens and can be re-rolled via
-// "Zaproponuj inne". Confirming a choice POSTs the replacement, then notifies
-// the parent so it can refetch the plan.
+// Lets the user replace a single planned meal. They optionally type a short
+// reason ("za ciężkie", "alergia", …) and confirm; the existing
+// POST /api/plans/:planId/meals/:mealId/replace route performs the AI
+// replacement server-side and returns the new meal. On success we notify the
+// parent so it can refetch the plan.
 
 export interface SwapMealRef {
   planId: string;
   mealId: string;
-  recipeId: string;
   name: string;
   dayLabel: string;
   mealTypeLabel: string;
@@ -45,98 +43,38 @@ export interface RecipeSwapSheetProps {
   onSwapped: (mealId: string) => void;
 }
 
-// Local shape of an alternative proposal. `// TODO: backend route` — the
-// alternatives endpoint is not yet exposed; this mirrors the expected payload.
-interface Alternative {
-  recipeId: string;
-  name: string;
-  imageUri?: string;
-  cookTimeMinutes?: number;
-  portions?: number;
-  matchScore?: number; // 0..1 — rendered as a "% dopasowania" badge.
-}
-
-interface AlternativesResponse {
-  alternatives: Alternative[];
-}
-
 export function RecipeSwapSheet({
   visible,
   meal,
   onClose,
   onSwapped,
 }: RecipeSwapSheetProps): React.JSX.Element | null {
+  const [reason, setReason] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
-  const [alternatives, setAlternatives] = useState<Alternative[]>([]);
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
 
-  const planId = meal?.planId;
-  const mealId = meal?.mealId;
-
-  // Load (or re-load) alternatives whenever the sheet opens for a given meal.
+  // Reset the form each time the sheet (re)opens for a meal.
   useEffect(() => {
-    let active = true;
-    if (!visible || planId === undefined || mealId === undefined) return;
-
-    setLoading(true);
-    setError(false);
-    setAlternatives([]);
-
-    apiFetch<AlternativesResponse>(
-      // TODO: backend route — alternatives endpoint not implemented yet.
-      `/api/plans/${planId}/meals/${mealId}/alternatives`,
-    )
-      .then((res) => {
-        if (!active) return;
-        setAlternatives(Array.isArray(res.alternatives) ? res.alternatives : []);
-      })
-      .catch(() => {
-        if (!active) return;
-        setError(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [visible, planId, mealId]);
-
-  async function reroll(): Promise<void> {
-    if (planId === undefined || mealId === undefined) return;
-    setLoading(true);
-    setError(false);
-    setAlternatives([]);
-    try {
-      const res = await apiFetch<AlternativesResponse>(
-        // TODO: backend route — alternatives endpoint not implemented yet.
-        `/api/plans/${planId}/meals/${mealId}/alternatives`,
-      );
-      setAlternatives(Array.isArray(res.alternatives) ? res.alternatives : []);
-    } catch {
-      setError(true);
-    } finally {
+    if (visible) {
+      setReason('');
       setLoading(false);
+      setError(false);
     }
-  }
+  }, [visible, meal?.mealId]);
 
-  async function chooseAlternative(alt: Alternative): Promise<void> {
-    if (!meal || submittingId !== null) return;
-    setSubmittingId(alt.recipeId);
+  async function confirm(): Promise<void> {
+    if (!meal || loading) return;
+    setLoading(true);
+    setError(false);
     try {
-      await apiFetch(
-        // TODO: backend route — replace endpoint accepting a chosen recipeId.
-        `/api/plans/${meal.planId}/meals/${meal.mealId}/replace`,
-        { method: 'POST', body: { recipeId: alt.recipeId } },
-      );
+      const trimmed = reason.trim();
+      await replaceMeal(meal.planId, meal.mealId, trimmed.length > 0 ? trimmed : undefined);
       onSwapped(meal.mealId);
       onClose();
     } catch {
       setError(true);
     } finally {
-      setSubmittingId(null);
+      setLoading(false);
     }
   }
 
@@ -183,77 +121,36 @@ export function RecipeSwapSheet({
             <MealCard name={meal.name} imageUri={meal.imageUri} />
           </View>
 
-          <View style={styles.altHeaderRow}>
-            <Text style={styles.sectionLabel}>Propozycje</Text>
-            <Pressable
-              testID="swap-reroll"
-              accessibilityRole="button"
-              accessibilityLabel="Zaproponuj inne"
-              hitSlop={8}
-              onPress={() => void reroll()}
-              disabled={loading}
-            >
-              <Text style={[styles.reroll, loading && styles.rerollDisabled]}>
-                Zaproponuj inne
-              </Text>
-            </Pressable>
-          </View>
+          {/* Reason → replace */}
+          <Text style={styles.sectionLabel}>Dlaczego zamieniasz? (opcjonalnie)</Text>
+          <TextInput
+            testID="swap-reason"
+            style={styles.input}
+            value={reason}
+            onChangeText={setReason}
+            placeholder="np. za ciężkie, brak czasu, alergia…"
+            placeholderTextColor={tokens.faint}
+            editable={!loading}
+            multiline
+            accessibilityLabel="Powód zamiany"
+          />
 
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
+          {error ? (
+            <Text style={styles.errorText} accessibilityRole="alert">
+              Nie udało się zamienić posiłku
+            </Text>
+          ) : null}
+
+          <Button
+            testID="swap-confirm"
+            variant="primary"
+            loading={loading}
+            disabled={loading}
+            onPress={() => void confirm()}
+            style={styles.confirm}
           >
-            {loading ? (
-              <View
-                accessibilityLabel="Ładowanie propozycji"
-                style={styles.skeletonGroup}
-              >
-                <SkeletonBlock height={180} radius={radii.md} />
-                <SkeletonBlock height={180} radius={radii.md} />
-                <SkeletonBlock height={180} radius={radii.md} />
-              </View>
-            ) : error ? (
-              <View style={styles.stateBox} accessibilityRole="alert">
-                <Text style={styles.stateText}>Nie udało się pobrać propozycji</Text>
-                <Button variant="secondary" onPress={() => void reroll()}>
-                  Spróbuj ponownie
-                </Button>
-              </View>
-            ) : alternatives.length === 0 ? (
-              <View style={styles.stateBox}>
-                <Text style={styles.stateText}>Brak innych propozycji na teraz.</Text>
-              </View>
-            ) : (
-              alternatives.map((alt) => {
-                const pct =
-                  alt.matchScore !== undefined
-                    ? Math.round(alt.matchScore * 100)
-                    : undefined;
-                const isSubmitting = submittingId === alt.recipeId;
-                return (
-                  <MealCard
-                    key={alt.recipeId}
-                    testID={`swap-alt-${alt.recipeId}`}
-                    name={isSubmitting ? `${alt.name} · Zamieniam…` : alt.name}
-                    imageUri={alt.imageUri}
-                    cookTimeMinutes={alt.cookTimeMinutes}
-                    portions={alt.portions}
-                    badges={
-                      pct !== undefined
-                        ? [{ tone: 'sage', label: `${pct}% dopasowania` }]
-                        : undefined
-                    }
-                    onPress={
-                      submittingId === null
-                        ? () => void chooseAlternative(alt)
-                        : undefined
-                    }
-                  />
-                );
-              })
-            )}
-          </ScrollView>
+            Zamień posiłek
+          </Button>
         </View>
       </View>
     </Modal>
@@ -306,24 +203,22 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   currentWrap: { opacity: 0.5 },
-  altHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  reroll: { fontSize: fontSize.sm, fontWeight: '700', color: tokens.sage },
-  rerollDisabled: { color: tokens.faint },
-  scroll: { marginTop: spacing.sm },
-  scrollContent: { gap: spacing.md, paddingBottom: spacing.lg },
-  skeletonGroup: { gap: spacing.md },
-  stateBox: {
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing['2xl'],
-  },
-  stateText: {
+  input: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: tokens.line2,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     fontSize: fontSize.base,
-    color: tokens.muted,
-    textAlign: 'center',
+    color: tokens.ink,
+    backgroundColor: tokens.surface,
+    textAlignVertical: 'top',
   },
+  errorText: {
+    fontSize: fontSize.sm,
+    color: tokens.terra,
+    marginTop: spacing.md,
+  },
+  confirm: { marginTop: spacing.lg },
 });

@@ -78,4 +78,13 @@
 - [x] Skeleton loading + empty/error states on every data screen
 - [x] Jest + React Native Testing Library — 13 suites / 40 tests (incl. auth-flow, allergy-guard, shopping-flow integration tests); `pnpm typecheck` green across all 9 packages
 - [x] Cross-platform UI E2E (`apps/mobile/e2e`) — Maestro flows for all 9 screens driving the real app against a typed, dependency-free mock API server (switchable scenarios); same flows run on iOS Simulator (macOS) + Android emulator (Windows); `testID`s added without breaking jest; opt-in nightly GH Actions (non-gating)
-- [ ] Backend REST routes for mobile-only actions still stubbed (`// TODO: backend route`): plan approve/replace/alternatives/feedback, shopping item PATCH/add, family member create
+- [x] Backend REST routes for mobile-only actions wired — removed every `// TODO: backend route` stub. `replaceMeal` (POST `/api/plans/:planId/meals/:mealId/replace`) and `updateShoppingItem` (PATCH `/api/shopping/items/:itemId`) now unwrap their existing routes; added the one genuinely missing route POST `/api/shopping/lists/:listId/items` (`shoppingService.addManualItem`). Recipe Swap reworked to A4 Variant 1 ("reason → replace") — the speculative GET `/alternatives` endpoint was dropped, not built. Plan approve/feedback were already routed.
+
+## Phase 11 — "Plately" visual redesign ✅ done
+
+- [x] Re-skinned design tokens to the forest-green (`#214D32`) + lime (`#BCEA4F`) "Plately" palette on a clean near-white green-tinted background (`#FBFCF6`); dropped the warm "AI beige". Retuned `packages/ui/src/tokens.ts` (and its verbatim native mirror `packages/ui-native/src/tokens.ts`) keeping all accent keys so every screen kept compiling
+- [x] Minimal/hairline cards — softened `shadows.card` to a barely-there 1px shadow over a 1px border; lighter radii
+- [x] Typography → native SF Pro system stack (thin, airy, "Apple" feel) in `packages/ui/src/fonts.ts` + `apps/web/app/globals.css`
+- [x] Primary CTA → forest green (was near-black ink); `TabBar` active tint → forest green with a lime accent dot
+- [x] Retuned `Placeholder` food tiles from beige to green/lime; replaced remaining hardcoded beige in `(app)/layout.tsx`, `auth-gate.tsx`, family `SegmentedControl`
+- [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native (8 suites/21) + mobile (13 suites/41) tests pass
