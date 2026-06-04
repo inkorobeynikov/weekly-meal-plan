@@ -59,6 +59,8 @@ function makeFamily(allergies: string[]): FamilyResponse {
       locale: 'pl',
       country: 'PL',
       timezone: 'Europe/Warsaw',
+      memberCount: null,
+      onboardingCompletedAt: null,
       telegramChatId: null,
       createdAt: '2026-06-01T00:00:00.000Z',
     },

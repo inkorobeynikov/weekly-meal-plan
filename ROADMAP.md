@@ -97,3 +97,12 @@
 - [x] Rewired senders to push: `plan-generate` + `retention-trigger` + new `feedback-reminder` Inngest cron (`TZ=Europe/Warsaw 0 18`, was the bot job); removed the Telegram webhook route and dropped `@meal-planner/bot` + `grammy` from `apps/web`
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
+
+## Phase 13 — Household backend gaps (onboarding + family CRUD) ✅ done
+
+- [x] Persist onboarding household data — `households.member_count` + `households.onboarding_completed_at` columns (migration `0004_many_rhino.sql`); `householdService.completeOnboarding()` saves name + stated family size and stamps the completion marker. Onboarding `finish()` now calls `updateHousehold` (PATCH `/api/family`) alongside `updatePreferences`
+- [x] Onboarding cosmetics — step-1 title fixed to "Jak nazwiemy Twoją rodzinę?" (matches the Nazwa rodziny field); added a consistent "Pomiń" on step 2; replaced the dead error UI (error then immediate `router.replace`) with navigation that is BLOCKED on save error so the message stays visible and the user can retry
+- [x] Family members CRUD — POST `/api/family/members` (create), PATCH + DELETE `/api/family/members/:memberId` (edit / remove / change `mealsAtHome`), all thin + Zod + `withAuth` and scoped to the authenticated household. W05 add creates server-first (no vanishing optimistic row); remove + "eats at home" toggles are optimistic with rollback; all failures surfaced to the user instead of silent rollback. Domain: `addMember` / `updateMember` / `removeMember` in `packages/domain`
+- [x] W05 shows custom (free-text) restrictions added during onboarding as removable chips (previously only the 4 canonical chips rendered) — HARD CONSTRAINT shown verbatim, never dropped
+- [x] Server-side onboarding-complete flag — `isOnboardingComplete()` now falls back to `households.onboardingCompletedAt` when the on-device flag is missing (e.g. reinstall) and back-fills the local cache, so returning users skip onboarding from server state
+- [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 48 tests pass (13 suites)
