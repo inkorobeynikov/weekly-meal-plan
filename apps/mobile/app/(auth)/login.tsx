@@ -31,6 +31,7 @@ export default function LoginScreen(): React.JSX.Element {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [socialPending, setSocialPending] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Social sign-in is opt-in: only shown when OAuth is actually configured.
@@ -63,10 +64,13 @@ export default function LoginScreen(): React.JSX.Element {
 
   async function handleSocial(provider: 'google' | 'apple'): Promise<void> {
     setError(null);
+    setSocialPending(provider);
     try {
       await signInSocial(provider);
     } catch {
       setError('Nie udało się zalogować. Spróbuj ponownie.');
+    } finally {
+      setSocialPending(null);
     }
   }
 
@@ -98,10 +102,25 @@ export default function LoginScreen(): React.JSX.Element {
                   accessibilityRole="button"
                   accessibilityLabel="Zaloguj przez Google"
                   onPress={() => void handleSocial('google')}
-                  style={styles.socialButton}
+                  disabled={socialPending !== null}
+                  style={[
+                    styles.socialButton,
+                    socialPending !== null ? styles.socialButtonDisabled : undefined,
+                  ]}
                 >
-                  <Ionicons name="logo-google" size={20} color={tokens.ink} />
-                  <Text style={styles.socialLabel}>Zaloguj przez Google</Text>
+                  <Ionicons
+                    name={socialPending === 'google' ? 'hourglass-outline' : 'logo-google'}
+                    size={20}
+                    color={socialPending !== null ? tokens.muted : tokens.ink}
+                  />
+                  <Text
+                    style={[
+                      styles.socialLabel,
+                      socialPending !== null ? styles.socialLabelDisabled : undefined,
+                    ]}
+                  >
+                    {socialPending === 'google' ? 'Trwa logowanie…' : 'Zaloguj przez Google'}
+                  </Text>
                 </Pressable>
 
                 {Platform.OS === 'ios' ? (
@@ -110,10 +129,25 @@ export default function LoginScreen(): React.JSX.Element {
                     accessibilityRole="button"
                     accessibilityLabel="Zaloguj przez Apple"
                     onPress={() => void handleSocial('apple')}
-                    style={styles.socialButton}
+                    disabled={socialPending !== null}
+                    style={[
+                      styles.socialButton,
+                      socialPending !== null ? styles.socialButtonDisabled : undefined,
+                    ]}
                   >
-                    <Ionicons name="logo-apple" size={20} color={tokens.ink} />
-                    <Text style={styles.socialLabel}>Zaloguj przez Apple</Text>
+                    <Ionicons
+                      name={socialPending === 'apple' ? 'hourglass-outline' : 'logo-apple'}
+                      size={20}
+                      color={socialPending !== null ? tokens.muted : tokens.ink}
+                    />
+                    <Text
+                      style={[
+                        styles.socialLabel,
+                        socialPending !== null ? styles.socialLabelDisabled : undefined,
+                      ]}
+                    >
+                      {socialPending === 'apple' ? 'Trwa logowanie…' : 'Zaloguj przez Apple'}
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -180,6 +214,18 @@ export default function LoginScreen(): React.JSX.Element {
             Zaloguj się
           </Button>
 
+          {/* Forgot password — no backend reset yet; stub with an alert. */}
+          <Pressable
+            testID="login-forgot-password"
+            accessibilityRole="link"
+            accessibilityLabel="Nie pamiętasz hasła?"
+            onPress={() => router.push('/(auth)/forgot-password')}
+            style={styles.linkRow}
+          >
+            <Text style={styles.linkMuted}>Nie pamiętasz hasła? </Text>
+            <Text style={styles.linkAccent}>Zresetuj je</Text>
+          </Pressable>
+
           <Pressable
             testID="login-register-link"
             accessibilityRole="link"
@@ -231,6 +277,8 @@ const styles = StyleSheet.create({
     borderColor: tokens.line2,
   },
   socialLabel: { fontSize: fontSize.base, fontWeight: '600', color: tokens.ink },
+  socialButtonDisabled: { opacity: 0.55 },
+  socialLabelDisabled: { color: tokens.muted },
   divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   dividerLine: { flex: 1, height: 1, backgroundColor: tokens.line2 },
   dividerText: { fontSize: fontSize.sm, color: tokens.muted },
