@@ -42,6 +42,8 @@ export function buildSystemPrompt(): string {
     '- mealType is one of: "dinner", "lunch", "lunch_leftover", "breakfast_template" (do not use breakfast_template — reserved).',
     '- Each recipe.whyThisMeal field explains in 1-2 sentences why this dish fits the family this week.',
     '- reasoningSummary is a short paragraph (2-4 sentences) explaining the overall composition of the plan.',
+    '- Set isTryNew=true ONLY for dishes that intentionally introduce something new/unfamiliar to this family (a new cuisine, technique or main ingredient); set it false for familiar comfort dishes. Honor varietyMode when deciding how many to flag.',
+    '- priceEstimateGrosze is your rough estimate of the total ingredient cost of the dish for the planned servings, expressed as an INTEGER number of grosze (1 zł = 100 grosze). Never use decimals. Omit it only if you genuinely cannot estimate.',
     '',
     'POLISH CONTEXT',
     '- All recipes should be culturally appropriate for a household in Poland.',

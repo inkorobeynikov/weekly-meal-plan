@@ -25,6 +25,8 @@ const mockUpdateShoppingItem: jest.Mock<
 const mockAddShoppingItem: jest.Mock<Promise<ShoppingListItem>, [string, AddShoppingItemInput]> =
   jest.fn();
 const mockApiFetch: jest.Mock<Promise<unknown>, [string, unknown?]> = jest.fn();
+const mockGetWeeklyPlan: jest.Mock<Promise<unknown>, []> = jest.fn();
+const mockGeneratePlan: jest.Mock<Promise<unknown>, []> = jest.fn();
 
 jest.mock('../lib/api', () => ({
   getShoppingList: (): Promise<ShoppingListWithItems | null> => mockGetShoppingList(),
@@ -36,6 +38,10 @@ jest.mock('../lib/api', () => ({
   addShoppingItem: (listId: string, input: AddShoppingItemInput): Promise<ShoppingListItem> =>
     mockAddShoppingItem(listId, input),
   apiFetch: (path: string, options?: unknown): Promise<unknown> => mockApiFetch(path, options),
+  // The shopping screen loads the current plan (F4 source-recipe labels) and may
+  // start a new week via usePlanGeneration.
+  getWeeklyPlan: (): Promise<unknown> => mockGetWeeklyPlan(),
+  generatePlan: (): Promise<unknown> => mockGeneratePlan(),
 }));
 
 // react-native-confetti-cannon → no-op component (avoids native timers).
@@ -60,6 +66,7 @@ function makeItem(
     status: 'pending',
     replacementText: null,
     promoHintId: null,
+    estimatedPriceGrosze: null,
     ...over,
   };
 }
@@ -88,6 +95,8 @@ beforeEach(() => {
       Promise.resolve(makeItem({ id: 'new-1', name: input.name })),
     );
   mockApiFetch.mockReset().mockResolvedValue(null);
+  mockGetWeeklyPlan.mockReset().mockResolvedValue({ plan: null, meals: [] });
+  mockGeneratePlan.mockReset().mockResolvedValue({ status: 'generating' });
 });
 
 // --- tests -------------------------------------------------------------------

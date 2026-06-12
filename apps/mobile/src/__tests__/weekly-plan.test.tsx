@@ -74,6 +74,8 @@ function makePlan(): PlanWithMealsAndRecipes {
     childFriendlyNotes: null,
     allergenNotes: null,
     costLevel: 'cheap' as const,
+    isTryNew: false,
+    priceEstimateGrosze: null,
     validationStatus: 'valid' as const,
     createdAt: '2026-06-01T00:00:00.000Z',
   };
@@ -98,6 +100,8 @@ function makePlan(): PlanWithMealsAndRecipes {
           recipeId: 'r1',
           leftoversPlanned: false,
           servings: 4,
+          badgesJson: null,
+          cookedAt: null,
         },
         recipe,
       },
@@ -165,5 +169,32 @@ describe('W01 Weekly Plan', () => {
     await waitFor(() => {
       expect(mockGeneratePlan).toHaveBeenCalledTimes(1);
     });
+  });
+
+  // F4: the AI reasoning blurb and per-dish badges are surfaced on W01.
+  it('surfaces the AI reasoning block and per-dish badges', async () => {
+    const base = makePlan();
+    const meal0 = base.meals[0];
+    if (!meal0) throw new Error('fixture missing meal');
+    mockGetWeeklyPlan.mockResolvedValue({
+      ...base,
+      plan: { ...base.plan, aiReasoningSummary: 'Lekki i tani tydzień dla rodziny.' },
+      meals: [
+        {
+          ...meal0,
+          meal: { ...meal0.meal, badgesJson: ['kid_ok', 'try_new'] },
+        },
+      ],
+    });
+
+    const { getByText, getByTestId } = render(<PlanScreen />);
+
+    await waitFor(() => expect(getByText('Naleśniki z serem')).toBeTruthy());
+    // Reasoning block.
+    expect(getByTestId('plan-reasoning')).toBeTruthy();
+    expect(getByText('Lekki i tani tydzień dla rodziny.')).toBeTruthy();
+    // Per-dish badges rendered from badgesJson.
+    expect(getByText('Dla dzieci')).toBeTruthy();
+    expect(getByText('Coś nowego')).toBeTruthy();
   });
 });

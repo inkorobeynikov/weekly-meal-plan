@@ -92,6 +92,52 @@ describe('RecipeSwapSheet (W07)', () => {
     );
   });
 
+  // F4: a quick reason chip forwards its Polish reason phrase to replaceMeal,
+  // and the "Zamieniam…" working state shows while the request is in flight.
+  it('forwards the selected quick-reason chip and shows the working state', async () => {
+    const deferred: { resolve: (value: unknown) => void } = { resolve: () => {} };
+    mockReplaceMeal.mockReturnValueOnce(
+      new Promise((resolve) => {
+        deferred.resolve = resolve;
+      }),
+    );
+
+    const { getByTestId, getByText } = render(
+      <RecipeSwapSheet visible meal={meal} onClose={jest.fn()} onSwapped={jest.fn()} />,
+    );
+
+    fireEvent.press(getByTestId('swap-chip-cheaper'));
+    fireEvent.press(getByTestId('swap-confirm'));
+
+    // Working state visible while the AI replacement runs.
+    await waitFor(() => expect(getByTestId('swap-working')).toBeTruthy());
+    expect(getByText('Zamieniam… dobieram nowe danie')).toBeTruthy();
+
+    expect(mockReplaceMeal).toHaveBeenCalledWith('plan1', 'm1', 'Chcę tańszą propozycję.');
+
+    deferred.resolve({ id: 'm1' });
+  });
+
+  it('combines a chip with free text into a single reason', async () => {
+    mockReplaceMeal.mockResolvedValueOnce({ id: 'm1' });
+
+    const { getByTestId } = render(
+      <RecipeSwapSheet visible meal={meal} onClose={jest.fn()} onSwapped={jest.fn()} />,
+    );
+
+    fireEvent.press(getByTestId('swap-chip-simpler'));
+    fireEvent.changeText(getByTestId('swap-reason'), 'bez glutenu');
+    fireEvent.press(getByTestId('swap-confirm'));
+
+    await waitFor(() =>
+      expect(mockReplaceMeal).toHaveBeenCalledWith(
+        'plan1',
+        'm1',
+        'Chcę coś prostszego do przygotowania. bez glutenu',
+      ),
+    );
+  });
+
   it('shows an error state when the replacement fails', async () => {
     mockReplaceMeal.mockRejectedValueOnce(new Error('boom'));
 

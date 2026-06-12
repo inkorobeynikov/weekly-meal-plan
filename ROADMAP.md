@@ -108,3 +108,15 @@
 - [x] W01 day cards: swap affordance opens the existing `RecipeSwapSheet`; feedback entry point added
 - [x] W03 shopping housekeeping: checkbox now toggles bought ⇄ pending (un-check), grouped list wrapped in a `ScrollView`, manual items get a category picker + per-row delete. New `DELETE /api/shopping/items/:itemId` route (thin + Zod + `withAuth`) backed by `shoppingService.deleteItem`
 - [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 13 suites / 44 tests pass
+
+## Phase 14 — Intelligent surface (F4) ✅ done
+
+- [x] New LLM-produced fields, Zod-validated in `packages/ai` before they touch the DB: `RecipeSchema.isTryNew` (Try-new pick) + `RecipeSchema.priceEstimateGrosze` (per-dish cost in integer grosze, optional). Prompt updated to populate both. The allergy/hardRestrictions validate-and-retry loop in `plan.service` is unchanged and still runs BEFORE any badge/price processing
+- [x] Additive, backward-compatible Drizzle migration `0004_left_alice.sql`: `recipes.is_try_new` + `recipes.price_estimate_grosze`, `planned_meals.badges_json` + `planned_meals.cooked_at`, `shopping_list_items.estimated_price_grosze` (all nullable)
+- [x] Per-dish badges (kid_ok / leftovers / try_new) derived in `packages/domain` (pure `deriveMealBadges` in `packages/shared`) and persisted on each planned meal at generation + swap time; surfaced on W01/W04 day cards and W02 recipe detail
+- [x] AI "why this plan" reasoning block (`PlanReasoning`) surfaced on W01 + W04 (reuses existing `aiReasoningSummary`)
+- [x] W02 recipe detail: collapsible storage / for-kids / swaps sections (`CollapsibleSection`) + "mark cooked" action → new `markMealCooked` domain method + `POST /api/plans/:planId/meals/cooked` (thin + Zod + `withAuth` + ownership check)
+- [x] W07 RecipeSwapSheet: quick reason chips (Prościej / Taniej / Zdrowiej / Dla dzieci / Inna kuchnia) + a "Zamieniam…" working state
+- [x] W03 shopping: each line shows its source recipe, "potrzebne do <dzień>" (neededByDate), promo hint (Biedronka/Lidl) and a real cost estimate (`estimated_price_grosze`, summed in grosze for the footer total) — replaced the old defensive duck-typed price hack
+- [x] W04 review: Approve is the primary action, Regenerate a ghost/secondary; fixed the feedback `kids_didnt_eat` step (was mislabelled "Średnio" → now "Dzieci nie zjadły", matching the value it records)
+- [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 14 suites / 64 tests + ui-native 25 tests pass

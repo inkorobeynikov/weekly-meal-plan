@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   StyleSheet,
@@ -21,11 +22,28 @@ import { replaceMeal } from '../lib/api';
 
 // W07 — Recipe Swap bottom sheet (A4 Variant 1: "reason → replace").
 //
-// Lets the user replace a single planned meal. They optionally type a short
-// reason ("za ciężkie", "alergia", …) and confirm; the existing
+// Lets the user replace a single planned meal. They pick a quick reason chip
+// (Prościej / Taniej / Zdrowiej / Dla dzieci / Inna kuchnia) and/or type a short
+// reason, then confirm; the existing
 // POST /api/plans/:planId/meals/:mealId/replace route performs the AI
-// replacement server-side and returns the new meal. On success we notify the
-// parent so it can refetch the plan.
+// replacement server-side and returns the new meal. While it runs we show a
+// "Zamieniam…" working state. On success we notify the parent so it can refetch.
+
+// F4: quick reason chips. The `reason` value is the Polish phrase forwarded to
+// the AI replacement route as the swap reason.
+interface ReasonChip {
+  readonly key: string;
+  readonly label: string;
+  readonly reason: string;
+}
+
+const REASON_CHIPS: readonly ReasonChip[] = [
+  { key: 'simpler', label: 'Prościej', reason: 'Chcę coś prostszego do przygotowania.' },
+  { key: 'cheaper', label: 'Taniej', reason: 'Chcę tańszą propozycję.' },
+  { key: 'healthier', label: 'Zdrowiej', reason: 'Chcę zdrowszą propozycję.' },
+  { key: 'kids', label: 'Dla dzieci', reason: 'Chcę danie bardziej przyjazne dzieciom.' },
+  { key: 'cuisine', label: 'Inna kuchnia', reason: 'Chcę danie z innej kuchni.' },
+];
 
 export interface SwapMealRef {
   planId: string;
@@ -50,6 +68,7 @@ export function RecipeSwapSheet({
   onSwapped,
 }: RecipeSwapSheetProps): React.JSX.Element | null {
   const [reason, setReason] = useState<string>('');
+  const [selectedChip, setSelectedChip] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
 
@@ -57,18 +76,28 @@ export function RecipeSwapSheet({
   useEffect(() => {
     if (visible) {
       setReason('');
+      setSelectedChip(null);
       setLoading(false);
       setError(false);
     }
   }, [visible, meal?.mealId]);
+
+  // Combine the selected quick-reason chip with any free text the user typed.
+  function buildReason(): string | undefined {
+    const chip = REASON_CHIPS.find((c) => c.key === selectedChip);
+    const trimmed = reason.trim();
+    const parts = [chip?.reason, trimmed].filter(
+      (p): p is string => typeof p === 'string' && p.length > 0,
+    );
+    return parts.length > 0 ? parts.join(' ') : undefined;
+  }
 
   async function confirm(): Promise<void> {
     if (!meal || loading) return;
     setLoading(true);
     setError(false);
     try {
-      const trimmed = reason.trim();
-      await replaceMeal(meal.planId, meal.mealId, trimmed.length > 0 ? trimmed : undefined);
+      await replaceMeal(meal.planId, meal.mealId, buildReason());
       onSwapped(meal.mealId);
       onClose();
     } catch {
@@ -121,8 +150,30 @@ export function RecipeSwapSheet({
             <MealCard name={meal.name} imageUri={meal.imageUri} />
           </View>
 
+          {/* F4: quick reason chips. */}
+          <Text style={styles.sectionLabel}>Szybki powód</Text>
+          <View style={styles.chipRow}>
+            {REASON_CHIPS.map((chip) => {
+              const on = chip.key === selectedChip;
+              return (
+                <Pressable
+                  key={chip.key}
+                  testID={`swap-chip-${chip.key}`}
+                  onPress={() => setSelectedChip(on ? null : chip.key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={chip.label}
+                  accessibilityState={{ selected: on }}
+                  disabled={loading}
+                  style={[styles.chip, on && styles.chipOn]}
+                >
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{chip.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           {/* Reason → replace */}
-          <Text style={styles.sectionLabel}>Dlaczego zamieniasz? (opcjonalnie)</Text>
+          <Text style={styles.sectionLabel}>Dodatkowy powód (opcjonalnie)</Text>
           <TextInput
             testID="swap-reason"
             style={styles.input}
@@ -134,6 +185,14 @@ export function RecipeSwapSheet({
             multiline
             accessibilityLabel="Powód zamiany"
           />
+
+          {/* F4: "Zamieniam…" working/result-preview state while the AI runs. */}
+          {loading ? (
+            <View testID="swap-working" style={styles.working}>
+              <ActivityIndicator size="small" color={tokens.sageInk} />
+              <Text style={styles.workingText}>Zamieniam… dobieram nowe danie</Text>
+            </View>
+          ) : null}
 
           {error ? (
             <Text style={styles.errorText} accessibilityRole="alert">
@@ -149,7 +208,7 @@ export function RecipeSwapSheet({
             onPress={() => void confirm()}
             style={styles.confirm}
           >
-            Zamień posiłek
+            {loading ? 'Zamieniam…' : 'Zamień posiłek'}
           </Button>
         </View>
       </View>
@@ -221,4 +280,31 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   confirm: { marginTop: spacing.lg },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: tokens.line2,
+    backgroundColor: tokens.surface,
+  },
+  chipOn: { backgroundColor: tokens.sageSoft, borderColor: tokens.sage },
+  chipText: { fontSize: fontSize.sm, fontWeight: '600', color: tokens.muted },
+  chipTextOn: { color: tokens.sageInk },
+  working: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.md,
+    backgroundColor: tokens.sageSoft,
+  },
+  workingText: { fontSize: fontSize.sm, fontWeight: '700', color: tokens.sageInk },
 });

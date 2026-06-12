@@ -44,10 +44,14 @@ interface ReactionOption {
 }
 
 // Four-step emoji scale mapped onto the FeedbackReaction enum.
+// F4 fix: the 😐 step previously read "Średnio" (average) while it submitted
+// `kids_didnt_eat` — a specific "the kids wouldn't eat it" signal that drives
+// the family-memory `kidsRejected` list. The label now matches the value it
+// actually records, so a so-so rating no longer poisons kid-rejection memory.
 const REACTIONS: readonly ReactionOption[] = [
   { value: 'favorite', emoji: '😍', label: 'Ulubione' },
   { value: 'liked', emoji: '👍', label: 'Smakowało' },
-  { value: 'kids_didnt_eat', emoji: '😐', label: 'Średnio' },
+  { value: 'kids_didnt_eat', emoji: '🙅', label: 'Dzieci nie zjadły' },
   { value: 'dont_repeat', emoji: '👎', label: 'Nie powtarzać' },
 ];
 

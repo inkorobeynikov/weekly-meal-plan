@@ -35,7 +35,9 @@ import {
   RecipeSwapSheet,
   type SwapMealRef,
 } from '../../../src/components/RecipeSwapSheet';
+import { PlanReasoning } from '../../../src/components/PlanReasoning';
 import { usePlanGeneration } from '../../../src/lib/usePlanGeneration';
+import { toMealCardBadges } from '../../../src/lib/badges';
 
 // W04 — Plan Review.
 //
@@ -349,6 +351,9 @@ export default function PlanReviewScreen(): React.JSX.Element {
               </Text>
             ) : null}
 
+            {/* F4: AI "why this plan" reasoning block. */}
+            <PlanReasoning reasoning={plan.plan.aiReasoningSummary} />
+
             {days.map((day) =>
               day.meals.length > 0 ? (
                 <View key={day.label} style={styles.dayBlock}>
@@ -365,6 +370,7 @@ export default function PlanReviewScreen(): React.JSX.Element {
                           name={m.recipe.title}
                           cookTimeMinutes={m.recipe.timeMinutes}
                           portions={m.meal.servings}
+                          badges={toMealCardBadges(m.meal.badgesJson)}
                           onSwap={() => openSwap(plan.plan.id, m, day.label)}
                         />
                       </View>
@@ -390,13 +396,15 @@ export default function PlanReviewScreen(): React.JSX.Element {
           >
             Zatwierdź plan
           </Button>
+          {/* F4: Regenerate is a ghost/secondary action so Approve stays the
+              single clear primary CTA. */}
           <Button
-            variant="secondary"
+            variant="ghost"
             loading={generation.generating}
             onPress={() => void handleGenerate()}
             accessibilityLabel="Wygeneruj nowy"
             testID="review-generate"
-            style={styles.footerBtn}
+            style={styles.footerBtnGhost}
           >
             {generation.generating ? 'Generuję nowy plan…' : 'Wygeneruj nowy'}
           </Button>
@@ -533,5 +541,6 @@ const styles = StyleSheet.create({
     borderTopColor: tokens.line2,
     backgroundColor: tokens.bg,
   },
-  footerBtn: { flex: 1 },
+  footerBtn: { flex: 1.4 },
+  footerBtnGhost: { flex: 1 },
 });

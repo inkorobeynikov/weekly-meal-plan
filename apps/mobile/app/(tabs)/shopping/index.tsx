@@ -21,11 +21,13 @@ import {
   tokens,
 } from '@meal-planner/ui-native';
 import type { ItemStatus } from '@meal-planner/shared';
+import { formatGroszeAsZl } from '@meal-planner/shared';
 
 import {
   addShoppingItem,
   deleteShoppingItem,
   getShoppingList,
+  getWeeklyPlan,
   updateShoppingItem,
   type ShoppingListItem,
   type ShoppingListWithItems,
@@ -33,32 +35,37 @@ import {
 import { usePlanGeneration } from '@/lib/usePlanGeneration';
 
 // ---------------------------------------------------------------------------
-// Pricing: the backend `ShoppingListItem` does not (yet) carry an estimated
-// price field. We read it defensively from an optional augmented shape so the
-// UI lights up automatically once the backend starts returning it, without
-// resorting to `any`.
+// Pricing (F4): the backend now returns a real `estimatedPriceGrosze` (integer
+// minor units) on each shopping line. We read it directly — no more defensive
+// duck-typing. Money is formatted via the shared grosze→zł helper.
 // ---------------------------------------------------------------------------
 
-interface MaybePricedItem {
-  // TODO: backend route — estimated price not yet on ShoppingListItem.
-  // Supported aliases: integer grosze or a decimal złoty amount.
-  estimatedPriceGrosze?: number;
-  estimatedPrice?: number;
+function itemPriceGrosze(item: ShoppingListItem): number | null {
+  return typeof item.estimatedPriceGrosze === 'number' ? item.estimatedPriceGrosze : null;
 }
 
-function itemPriceZl(item: ShoppingListItem): number | null {
-  const priced = item as ShoppingListItem & MaybePricedItem;
-  if (typeof priced.estimatedPriceGrosze === 'number') {
-    return priced.estimatedPriceGrosze / 100;
-  }
-  if (typeof priced.estimatedPrice === 'number') {
-    return priced.estimatedPrice;
-  }
-  return null;
+// ---------------------------------------------------------------------------
+// Promo hint label (F4): map a matched promotion to a short "Biedronka/Lidl"
+// chip. We read the first promo hint's retailer when present.
+// ---------------------------------------------------------------------------
+
+function promoLabel(item: ShoppingListItem): string | null {
+  const hint = item.promoHints?.[0];
+  if (!hint) return null;
+  const retailer = hint.retailer.trim();
+  return retailer.length > 0 ? `Promocja: ${retailer}` : null;
 }
 
-function formatZl(value: number): string {
-  return `${value.toFixed(2).replace('.', ',')} zł`;
+// Format an ISO date as a short Polish "potrzebne do <dzień>" weekday+day label.
+const WEEKDAY_SHORT = ['Nd', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'] as const;
+
+function neededByLabel(iso: string | null): string | null {
+  if (!iso) return null;
+  const [y, m, d] = iso.slice(0, 10).split('-').map((p) => Number.parseInt(p, 10));
+  if (!y || !m || !d) return null;
+  const date = new Date(y, m - 1, d);
+  const wd = WEEKDAY_SHORT[date.getDay()] ?? '';
+  return `potrzebne do ${wd} ${date.getDate()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +174,8 @@ export default function ShoppingScreen(): React.JSX.Element {
   const [list, setList] = useState<ShoppingListWithItems | null>(null);
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [rowError, setRowError] = useState<string | null>(null);
+  // F4: recipeId → title map so each shopping line can name its source recipe.
+  const [recipeTitles, setRecipeTitles] = useState<Record<string, string>>({});
 
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -179,7 +188,18 @@ export default function ShoppingScreen(): React.JSX.Element {
   const fetchList = useCallback(async (): Promise<void> => {
     setState('loading');
     try {
-      const data = await getShoppingList();
+      // Load the list and the current plan in parallel; the plan gives us recipe
+      // titles so each line can name its source recipe (F4). A plan fetch failure
+      // is non-fatal — the list still renders, just without source labels.
+      const [data, plan] = await Promise.all([
+        getShoppingList(),
+        getWeeklyPlan().catch(() => null),
+      ]);
+      if (plan) {
+        const map: Record<string, string> = {};
+        for (const m of plan.meals) map[m.recipe.id] = m.recipe.title;
+        setRecipeTitles(map);
+      }
       if (!data || data.items.length === 0) {
         setList(data);
         setItems(data ? data.items : []);
@@ -258,6 +278,7 @@ export default function ShoppingScreen(): React.JSX.Element {
       status: 'pending',
       replacementText: null,
       promoHintId: null,
+      estimatedPriceGrosze: null,
     };
     setItems((prev) => [...prev, optimistic]);
     setDraftName('');
@@ -319,11 +340,13 @@ export default function ShoppingScreen(): React.JSX.Element {
   const totalCount = items.length;
   const allBought = totalCount > 0 && boughtCount === totalCount;
 
-  const totalZl = useMemo(() => {
+  // F4: total estimated cost summed in grosze (integer minor units), formatted
+  // once at the end. null when no line carries an estimate.
+  const totalGrosze = useMemo(() => {
     let sum = 0;
     let any = false;
     for (const it of items) {
-      const price = itemPriceZl(it);
+      const price = itemPriceGrosze(it);
       if (price !== null) {
         sum += price;
         any = true;
@@ -457,6 +480,7 @@ export default function ShoppingScreen(): React.JSX.Element {
                   <ItemRow
                     key={item.id}
                     item={item}
+                    recipeTitles={recipeTitles}
                     last={idx === group.items.length - 1}
                     onCheck={() => void handleCheck(item)}
                     onNotFound={() => void handleNotFound(item)}
@@ -516,7 +540,7 @@ export default function ShoppingScreen(): React.JSX.Element {
         {/* Sticky footer */}
         <View style={styles.footer}>
           <Text style={styles.footerLabel}>Szacowany koszt:</Text>
-          <Text style={styles.footerValue}>{totalZl !== null ? formatZl(totalZl) : '—'}</Text>
+          <Text style={styles.footerValue}>{formatGroszeAsZl(totalGrosze) ?? '—'}</Text>
         </View>
 
         {/* FAB */}
@@ -542,17 +566,33 @@ export default function ShoppingScreen(): React.JSX.Element {
 
 interface ItemRowProps {
   item: ShoppingListItem;
+  recipeTitles: Record<string, string>;
   last: boolean;
   onCheck: () => void;
   onNotFound: () => void;
   onDelete: () => void;
 }
 
-function ItemRow({ item, last, onCheck, onNotFound, onDelete }: ItemRowProps): React.JSX.Element {
+function ItemRow({
+  item,
+  recipeTitles,
+  last,
+  onCheck,
+  onNotFound,
+  onDelete,
+}: ItemRowProps): React.JSX.Element {
   const checked = item.status === 'bought';
   const notFound = item.status === 'not_found';
-  const price = itemPriceZl(item);
+  const priceText = formatGroszeAsZl(itemPriceGrosze(item));
   const qtyText = item.unit ? `${item.quantity} ${item.unit}` : item.quantity;
+
+  // F4: source recipe(s) for this line, "potrzebne do <dzień>", and any promo.
+  const sources = item.relatedRecipeIds
+    .map((id) => recipeTitles[id])
+    .filter((t): t is string => typeof t === 'string' && t.length > 0);
+  const sourceText = sources.length > 0 ? sources.join(', ') : null;
+  const neededBy = neededByLabel(item.neededByDate);
+  const promo = promoLabel(item);
 
   return (
     <View style={[styles.itemRow, !last && styles.itemRowBorder, checked && styles.itemRowDone]}>
@@ -579,8 +619,28 @@ function ItemRow({ item, last, onCheck, onNotFound, onDelete }: ItemRowProps): R
           </Text>
           {qtyText ? <Text style={styles.itemQty}>{qtyText}</Text> : null}
         </View>
+
+        {/* F4: source recipe + needed-by day. */}
+        {sourceText ? (
+          <Text testID={`shopping-source-${item.id}`} style={styles.itemSource} numberOfLines={1}>
+            {sourceText}
+          </Text>
+        ) : null}
+
         <View style={styles.itemMetaRow}>
-          {price !== null ? <Text style={styles.itemPrice}>{formatZl(price)}</Text> : null}
+          {priceText !== null ? <Text style={styles.itemPrice}>{priceText}</Text> : null}
+          {neededBy ? (
+            <View testID={`shopping-neededby-${item.id}`} style={styles.neededByChip}>
+              <Ionicons name="calendar-outline" size={11} color={tokens.muted} />
+              <Text style={styles.neededByText}>{neededBy}</Text>
+            </View>
+          ) : null}
+          {promo ? (
+            <View testID={`shopping-promo-${item.id}`} style={styles.promoChip}>
+              <Ionicons name="pricetag-outline" size={11} color={tokens.amberInk} />
+              <Text style={styles.promoText}>{promo}</Text>
+            </View>
+          ) : null}
           {notFound ? (
             <View style={styles.notFoundBadge}>
               <Text style={styles.notFoundBadgeText}>Nie znaleziono</Text>
@@ -754,8 +814,21 @@ const styles = StyleSheet.create({
   itemName: { fontSize: fontSize.base, fontWeight: '600', color: tokens.ink },
   itemNameStruck: { textDecorationLine: 'line-through', color: tokens.muted },
   itemQty: { fontSize: fontSize.xs, color: tokens.muted, fontWeight: '500' },
+  itemSource: { fontSize: fontSize.xs, color: tokens.muted },
   itemMetaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  itemPrice: { fontSize: fontSize.xs, color: tokens.ink2, fontWeight: '600' },
+  itemPrice: { fontSize: fontSize.xs, color: tokens.ink2, fontWeight: '700' },
+  neededByChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  neededByText: { fontSize: fontSize.xs, color: tokens.muted, fontWeight: '500' },
+  promoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: tokens.amberSoft,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+  },
+  promoText: { fontSize: fontSize.xs, color: tokens.amberInk, fontWeight: '700' },
   notFoundBadge: {
     backgroundColor: tokens.terraSoft,
     paddingVertical: 2,
