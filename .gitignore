@@ -22,7 +22,8 @@ Thumbs.db
 .idea/
 
 # Claude Code local state
-.claude/
+.claude/*
+!.claude/settings.local.json
 
 # Drizzle
 drizzle/meta/
