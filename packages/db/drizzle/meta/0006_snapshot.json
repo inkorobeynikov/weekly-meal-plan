@@ -1,6 +1,6 @@
 {
-  "id": "0eb6d0a4-e483-41d9-87d6-f056f3b8dbe3",
-  "prevId": "c1216069-e53c-41dc-9878-69e55f13a921",
+  "id": "58a356a0-f3d1-47b7-9963-5e1fefe7161f",
+  "prevId": "22261d37-481f-45fc-ad9d-f6ca4db642e1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -455,6 +455,18 @@
           "notNull": true,
           "default": "'Europe/Warsaw'"
         },
+        "member_count": {
+          "name": "member_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "onboarding_completed_at": {
+          "name": "onboarding_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "telegram_chat_id": {
           "name": "telegram_chat_id",
           "type": "text",
@@ -534,6 +546,18 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "badges_json": {
+          "name": "badges_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cooked_at": {
+          "name": "cooked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -849,6 +873,18 @@
           "notNull": true,
           "default": "'moderate'"
         },
+        "is_try_new": {
+          "name": "is_try_new",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_estimate_grosze": {
+          "name": "price_estimate_grosze",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "validation_status": {
           "name": "validation_status",
           "type": "validation_status",
@@ -1026,6 +1062,12 @@
         "promo_hint_id": {
           "name": "promo_hint_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimated_price_grosze": {
+          "name": "estimated_price_grosze",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         }

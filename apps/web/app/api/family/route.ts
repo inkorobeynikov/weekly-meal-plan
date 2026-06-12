@@ -22,8 +22,17 @@ export const GET = withAuth(async (_req, { user }) => {
   return Response.json({ household, members, preferences })
 })
 
-const PrefsPatchSchema = z
+// The PATCH body mixes household-level fields (name, memberCount, the
+// onboarding-complete marker) with family-preference fields. Both groups are
+// optional so callers (onboarding finish, W05 auto-save) can send just the
+// subset they changed. `.strict()` rejects unknown keys.
+const FamilyPatchSchema = z
   .object({
+    // Household-level fields persisted during W06 onboarding.
+    name: z.string().trim().min(1).max(120).optional(),
+    memberCount: z.number().int().positive().max(20).optional(),
+    onboardingComplete: z.boolean().optional(),
+    // --- preferences ---
     likes: z.array(z.string()).optional(),
     dislikes: z.array(z.string()).optional(),
     // hardRestrictions and allergies are HARD CONSTRAINTS — they affect downstream plan generation.
@@ -51,18 +60,42 @@ export const PATCH = withAuth(async (req, { user }) => {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const parsed = PrefsPatchSchema.safeParse(rawBody)
+  const parsed = FamilyPatchSchema.safeParse(rawBody)
   if (!parsed.success) {
     return Response.json({ error: 'Invalid body', issues: parsed.error.issues }, { status: 400 })
   }
 
-  const existing = await householdService.getPreferences(householdId)
-  const merged = {
-    householdId,
-    ...(existing ?? {}),
-    ...parsed.data,
-  } as Parameters<typeof householdService.upsertPreferences>[0]
+  const {
+    name,
+    memberCount,
+    onboardingComplete,
+    ...prefsPatch
+  } = parsed.data
 
-  const preferences = await householdService.upsertPreferences(merged)
-  return Response.json({ preferences })
+  // Persist household-level fields when any were supplied.
+  let household = undefined
+  if (name !== undefined || memberCount !== undefined || onboardingComplete === true) {
+    household = await householdService.completeOnboarding(householdId, {
+      ...(name !== undefined ? { name } : {}),
+      ...(memberCount !== undefined ? { memberCount } : {}),
+      markComplete: onboardingComplete === true,
+    })
+  }
+
+  // Persist preference fields when any were supplied. Merge over the existing
+  // row so untouched columns are preserved.
+  let preferences = undefined
+  if (Object.keys(prefsPatch).length > 0) {
+    const existing = await householdService.getPreferences(householdId)
+    const merged = {
+      householdId,
+      ...(existing ?? {}),
+      ...prefsPatch,
+    } as Parameters<typeof householdService.upsertPreferences>[0]
+    preferences = await householdService.upsertPreferences(merged)
+  } else {
+    preferences = await householdService.getPreferences(householdId)
+  }
+
+  return Response.json({ preferences, household })
 })

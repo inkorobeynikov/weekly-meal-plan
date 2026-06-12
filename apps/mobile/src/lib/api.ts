@@ -146,6 +146,11 @@ export interface Household {
   locale: string;
   country: string;
   timezone: string;
+  // Stated family size from W06 onboarding step 2. Null until onboarding records it.
+  memberCount: number | null;
+  // Server-side onboarding-complete marker (ISO string) or null. Lets returning
+  // users skip onboarding from server state, not just the on-device flag.
+  onboardingCompletedAt: string | null;
   telegramChatId: string | null;
   createdAt: string;
 }
@@ -319,6 +324,30 @@ export interface UpdatePreferencesInput {
   stores?: string[];
 }
 
+// Household-level fields persisted via PATCH /api/family (all optional). Used by
+// onboarding to save the household name + stated size and stamp completion.
+export interface UpdateHouseholdInput {
+  name?: string;
+  memberCount?: number;
+  onboardingComplete?: boolean;
+}
+
+// Matches the POST /api/family/members CreateMemberSchema.
+export interface CreateMemberInput {
+  displayName: string;
+  approximateAgeGroup?: AgeGroup;
+  role?: MemberRole;
+  mealsAtHome?: MealsAtHome;
+}
+
+// Matches the PATCH /api/family/members/:memberId UpdateMemberSchema (all optional).
+export interface UpdateMemberInput {
+  displayName?: string;
+  approximateAgeGroup?: AgeGroup;
+  role?: MemberRole;
+  mealsAtHome?: MealsAtHome;
+}
+
 // Matches the POST /api/feedback BodySchema (recipeId + reaction required).
 export interface SubmitFeedbackInput {
   recipeId: string;
@@ -446,6 +475,41 @@ export function updatePreferences(data: UpdatePreferencesInput): Promise<FamilyP
     method: 'PATCH',
     body: { ...data },
   }).then((res) => res.preferences);
+}
+
+// PATCH /api/family -> { household }. Persists household-level onboarding data
+// (name, stated member count) and optionally stamps onboarding completion.
+export function updateHousehold(data: UpdateHouseholdInput): Promise<Household> {
+  return apiFetch<{ household: Household }>('/api/family', {
+    method: 'PATCH',
+    body: { ...data },
+  }).then((res) => res.household);
+}
+
+// POST /api/family/members -> the created member row.
+export function createMember(data: CreateMemberInput): Promise<HouseholdMember> {
+  return apiFetch<HouseholdMember>('/api/family/members', {
+    method: 'POST',
+    body: { ...data },
+  });
+}
+
+// PATCH /api/family/members/:memberId -> the updated member row.
+export function updateMember(
+  memberId: string,
+  data: UpdateMemberInput,
+): Promise<HouseholdMember> {
+  return apiFetch<HouseholdMember>(`/api/family/members/${memberId}`, {
+    method: 'PATCH',
+    body: { ...data },
+  });
+}
+
+// DELETE /api/family/members/:memberId -> { ok: true }.
+export function deleteMember(memberId: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>(`/api/family/members/${memberId}`, {
+    method: 'DELETE',
+  });
 }
 
 // POST /api/push/register -> registers this device's Expo push token for the

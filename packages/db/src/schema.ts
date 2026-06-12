@@ -15,6 +15,8 @@ import type {
   Ingredient,
   RecipeSubstitution,
   MealBadge,
+  MealType,
+  CanonicalAllergen,
 } from '@meal-planner/shared'
 
 export const memberRoleEnum = pgEnum('member_role', ['planning_parent', 'adult', 'child'])
@@ -74,6 +76,14 @@ export const households = pgTable('households', {
   locale: text('locale').notNull().default('pl'),
   country: text('country').notNull().default('PL'),
   timezone: text('timezone').notNull().default('Europe/Warsaw'),
+  // Family size stated during W06 onboarding step 2. A household-level fact
+  // distinct from the named `household_members` rows (which may be added later
+  // and individually). Nullable until onboarding records it.
+  memberCount: integer('member_count'),
+  // Set when the W06 onboarding wizard is finished. Lets returning users (e.g.
+  // after a reinstall, when the on-device flag is gone) skip onboarding based on
+  // server state instead of local SecureStore only.
+  onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
   telegramChatId: text('telegram_chat_id').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -168,6 +178,19 @@ export const recipes = pgTable('recipes', {
   // (integer minor units — never floats). Nullable: older rows / unestimated.
   priceEstimateGrosze: integer('price_estimate_grosze'),
   validationStatus: validationStatusEnum('validation_status').notNull().default('pending'),
+  // Recipe library (Phase 13) — metadata for the imported global pool
+  sourceUrl: text('source_url'),
+  contentHash: text('content_hash').unique(), // sha256(sourceUrl) — idempotent re-imports
+  cuisine: text('cuisine'),
+  tags: jsonb('tags').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  mealTypes: jsonb('meal_types').$type<MealType[]>().notNull().default(sql`'[]'::jsonb`),
+  // HARD CONSTRAINT support: canonical allergens enable SQL-level pre-filtering
+  // against family allergies/hardRestrictions before anything reaches the prompt.
+  allergens: jsonb('allergens')
+    .$type<CanonicalAllergen[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  isGoodForLeftovers: boolean('is_good_for_leftovers').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

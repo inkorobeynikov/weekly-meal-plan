@@ -19,6 +19,20 @@ export type VarietyMode = 'safe' | 'balanced' | 'adventurous'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type CostLevel = 'cheap' | 'moderate' | 'expensive'
 export type ValidationStatus = 'pending' | 'valid' | 'invalid'
+// Canonical allergen vocabulary for the imported recipe pool (Phase 13).
+// allergies/hardRestrictions are HARD CONSTRAINTS — this fixed list enables
+// SQL-level pre-filtering of pool recipes before anything reaches the prompt.
+export type CanonicalAllergen =
+  | 'gluten'
+  | 'laktoza'
+  | 'jaja'
+  | 'orzechy'
+  | 'ryby'
+  | 'skorupiaki'
+  | 'soja'
+  | 'seler'
+  | 'gorczyca'
+  | 'sezam'
 
 // F4 "intelligent surface": per-dish badges surfaced on the day cards (W01/W04)
 // and recipe detail (W02). Derived from recipe flags in the domain layer and
@@ -154,3 +168,16 @@ const COST_LEVEL_LABELS: Record<CostLevel, string> = {
 export function costLevelLabel(level: CostLevel): string {
   return COST_LEVEL_LABELS[level]
 }
+
+export const CANONICAL_ALLERGENS: readonly CanonicalAllergen[] = [
+  'gluten',
+  'laktoza',
+  'jaja',
+  'orzechy',
+  'ryby',
+  'skorupiaki',
+  'soja',
+  'seler',
+  'gorczyca',
+  'sezam',
+] as const

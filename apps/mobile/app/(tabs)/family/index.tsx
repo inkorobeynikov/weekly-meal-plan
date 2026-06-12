@@ -26,14 +26,17 @@ import {
 import type { AgeGroup, BudgetMode } from '@meal-planner/shared';
 
 import {
-  apiFetch,
+  createMember,
+  deleteMember,
   getHousehold,
+  updateMember,
   updatePreferences,
   type FamilyResponse,
   type FamilyPreferences,
   type HouseholdMember,
   type UpdatePreferencesInput,
 } from '../../../src/lib/api';
+import type { MealsAtHome } from '@meal-planner/shared';
 
 // ---------------------------------------------------------------------------
 // W05 — Family Preferences.
@@ -64,6 +67,17 @@ const RESTRICTIONS: readonly string[] = [
   'Wegańskie',
   'Halal',
   'Koszerne',
+];
+
+interface MealSlotOption {
+  readonly slot: keyof MealsAtHome;
+  readonly label: string;
+}
+// The three meal slots a member can eat at home (W05 "eats at home" toggles).
+const MEAL_SLOTS: readonly MealSlotOption[] = [
+  { slot: 'breakfast', label: 'Śniadanie' },
+  { slot: 'lunch', label: 'Obiad' },
+  { slot: 'dinner', label: 'Kolacja' },
 ];
 
 const CUISINES: readonly string[] = [
@@ -182,6 +196,10 @@ export default function FamilyScreen(): React.JSX.Element {
   const [addOpen, setAddOpen] = useState<boolean>(false);
   const [newName, setNewName] = useState<string>('');
   const [newAge, setNewAge] = useState<AgeGroup>('adult');
+  const [savingMember, setSavingMember] = useState<boolean>(false);
+  // Surfaced to the user when a member create/edit/remove fails, instead of a
+  // silent optimistic rollback.
+  const [memberError, setMemberError] = useState<string | null>(null);
 
   // Debounce bookkeeping. We hold the latest prefs in a ref so the timer always
   // flushes the freshest snapshot, and clear any pending timer on unmount.
@@ -306,41 +324,86 @@ export default function FamilyScreen(): React.JSX.Element {
     [mutatePrefs],
   );
 
-  const addMember = useCallback(() => {
+  const addMember = useCallback(async () => {
     const name = newName.trim();
-    if (name.length === 0 || householdId === null) return;
+    if (name.length === 0 || householdId === null || savingMember) return;
 
-    // Optimistic local append with a temporary id. The real row id is assigned
-    // by the backend once the route exists.
-    const optimistic: HouseholdMember = {
-      id: `temp-${Date.now()}`,
-      householdId,
-      displayName: name,
-      role: newAge === 'adult' ? 'adult' : 'child',
-      approximateAgeGroup: newAge,
-      mealsAtHome: { breakfast: true, lunch: true, dinner: true },
-      telegramUserId: null,
-      createdAt: new Date().toISOString(),
-    };
-    setMembers((prev) => [...prev, optimistic]);
-    setNewName('');
-    setNewAge('adult');
-    setAddOpen(false);
-
-    // TODO: backend route — no member-create REST endpoint exists yet. We POST
-    // optimistically and reconcile the real id on success; failures simply roll
-    // the optimistic row back.
-    void apiFetch<HouseholdMember>('/api/family/members', {
-      method: 'POST',
-      body: { displayName: name, approximateAgeGroup: newAge },
-    })
-      .then((created) => {
-        setMembers((prev) => prev.map((m) => (m.id === optimistic.id ? created : m)));
-      })
-      .catch(() => {
-        setMembers((prev) => prev.filter((m) => m.id !== optimistic.id));
+    setSavingMember(true);
+    setMemberError(null);
+    try {
+      // Create on the server FIRST, then append the real row. No optimistic
+      // placeholder: previously the row appeared then vanished when the request
+      // failed against a non-existent route. The age group drives the role.
+      const created = await createMember({
+        displayName: name,
+        approximateAgeGroup: newAge,
       });
-  }, [newName, newAge, householdId]);
+      setMembers((prev) => [...prev, created]);
+      setNewName('');
+      setNewAge('adult');
+      setAddOpen(false);
+    } catch {
+      // Surface the failure instead of silently dropping the member.
+      setMemberError('Nie udało się dodać domownika. Spróbuj ponownie.');
+    } finally {
+      setSavingMember(false);
+    }
+  }, [newName, newAge, householdId, savingMember]);
+
+  // Remove a member. Optimistically drops the row, restoring it on failure and
+  // surfacing the error so the deletion never silently fails.
+  const removeMember = useCallback(
+    async (member: HouseholdMember) => {
+      setMemberError(null);
+      const snapshot = member;
+      setMembers((prev) => prev.filter((m) => m.id !== member.id));
+      try {
+        await deleteMember(member.id);
+      } catch {
+        setMembers((prev) =>
+          prev.some((m) => m.id === snapshot.id) ? prev : [...prev, snapshot],
+        );
+        setMemberError('Nie udało się usunąć domownika. Spróbuj ponownie.');
+      }
+    },
+    [],
+  );
+
+  // Toggle whether a member eats a given meal at home (mealsAtHome). Optimistic
+  // with rollback + surfaced error.
+  const toggleMealAtHome = useCallback(
+    async (member: HouseholdMember, slot: keyof MealsAtHome) => {
+      setMemberError(null);
+      const nextMeals: MealsAtHome = {
+        ...member.mealsAtHome,
+        [slot]: !member.mealsAtHome[slot],
+      };
+      setMembers((prev) =>
+        prev.map((m) => (m.id === member.id ? { ...m, mealsAtHome: nextMeals } : m)),
+      );
+      try {
+        const updated = await updateMember(member.id, { mealsAtHome: nextMeals });
+        setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      } catch {
+        // Roll back to the previous mealsAtHome on failure.
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.id === member.id ? { ...m, mealsAtHome: member.mealsAtHome } : m,
+          ),
+        );
+        setMemberError('Nie udało się zapisać zmiany. Spróbuj ponownie.');
+      }
+    },
+    [],
+  );
+
+  // Free-text restrictions the user added during onboarding (anything outside
+  // the canonical RESTRICTIONS chip set). Rendered as removable chips so they're
+  // visible and editable here.
+  const customRestrictions = useMemo<string[]>(
+    () => prefs.hardRestrictions.filter((r) => !RESTRICTIONS.includes(r)),
+    [prefs.hardRestrictions],
+  );
 
   const saveIndicator = useMemo<string | null>(() => {
     if (saveStatus === 'saving') return 'Zapisywanie…';
@@ -400,16 +463,60 @@ export default function FamilyScreen(): React.JSX.Element {
             <Text style={styles.helperText}>Nie dodano jeszcze żadnych domowników.</Text>
           ) : (
             members.map((m) => (
-              <View key={m.id} style={styles.memberRow}>
-                <Avatar name={m.displayName} size="md" />
-                <Text style={styles.memberName}>{m.displayName}</Text>
-                <Badge
-                  tone={ageGroupTone(m.approximateAgeGroup)}
-                  label={ageGroupLabel(m.approximateAgeGroup)}
-                />
+              <View key={m.id} style={styles.memberBlock}>
+                <View style={styles.memberRow}>
+                  <Avatar name={m.displayName} size="md" />
+                  <Text style={styles.memberName}>{m.displayName}</Text>
+                  <Badge
+                    tone={ageGroupTone(m.approximateAgeGroup)}
+                    label={ageGroupLabel(m.approximateAgeGroup)}
+                  />
+                  <Pressable
+                    testID={`family-remove-${m.id}`}
+                    onPress={() => void removeMember(m)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Usuń ${m.displayName}`}
+                    hitSlop={8}
+                    style={styles.removeBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={tokens.terra} />
+                  </Pressable>
+                </View>
+                {/* "Eats at home" toggles (mealsAtHome). */}
+                <View style={styles.mealSlotRow}>
+                  {MEAL_SLOTS.map((opt) => {
+                    const on = m.mealsAtHome[opt.slot];
+                    return (
+                      <Pressable
+                        key={opt.slot}
+                        testID={`family-meal-${m.id}-${opt.slot}`}
+                        onPress={() => void toggleMealAtHome(m, opt.slot)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${opt.label} w domu — ${m.displayName}`}
+                        accessibilityState={{ selected: on }}
+                        style={[styles.mealSlot, on ? styles.mealSlotOn : styles.mealSlotOff]}
+                      >
+                        <Text
+                          style={[
+                            styles.mealSlotText,
+                            on ? styles.mealSlotTextOn : styles.mealSlotTextOff,
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
             ))
           )}
+
+          {memberError ? (
+            <Text testID="family-member-error" style={styles.memberErrorText}>
+              {memberError}
+            </Text>
+          ) : null}
 
           {addOpen ? (
             <View style={styles.addForm}>
@@ -421,7 +528,7 @@ export default function FamilyScreen(): React.JSX.Element {
                 style={styles.input}
                 accessibilityLabel="Imię domownika"
                 returnKeyType="done"
-                onSubmitEditing={addMember}
+                onSubmitEditing={() => void addMember()}
               />
               <Text style={styles.label}>Grupa wiekowa</Text>
               <View style={styles.chipWrap}>
@@ -438,7 +545,12 @@ export default function FamilyScreen(): React.JSX.Element {
                 <Button variant="secondary" size="sm" onPress={() => setAddOpen(false)}>
                   Anuluj
                 </Button>
-                <Button size="sm" onPress={addMember} disabled={newName.trim().length === 0}>
+                <Button
+                  size="sm"
+                  onPress={() => void addMember()}
+                  loading={savingMember}
+                  disabled={newName.trim().length === 0 || savingMember}
+                >
                   Dodaj
                 </Button>
               </View>
@@ -486,6 +598,22 @@ export default function FamilyScreen(): React.JSX.Element {
                 selected={prefs.hardRestrictions.includes(r)}
                 onPress={() => toggleRestriction(r)}
               />
+            ))}
+            {/* Custom (free-text) restrictions added during onboarding — not in
+                the canonical chip set. Always selected; tapping removes them.
+                HARD CONSTRAINT: shown verbatim, never silently dropped. */}
+            {customRestrictions.map((r) => (
+              <Pressable
+                key={r}
+                testID={`family-custom-restriction-${r}`}
+                onPress={() => toggleRestriction(r)}
+                accessibilityRole="button"
+                accessibilityLabel={`Usuń ograniczenie ${r}`}
+                style={[styles.chip, styles.chipOn, styles.customChip]}
+              >
+                <Text style={[styles.chipText, styles.chipTextOn]}>{r}</Text>
+                <Ionicons name="close" size={14} color={tokens.sageInk} />
+              </Pressable>
             ))}
           </View>
         </Card>
@@ -589,13 +717,35 @@ const styles = StyleSheet.create({
   helperText: { fontSize: fontSize.sm, color: tokens.muted, lineHeight: 20 },
   label: { fontSize: fontSize.sm, fontWeight: '700', color: tokens.ink2 },
 
+  memberBlock: { paddingVertical: spacing.xs, gap: spacing.sm },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.xs,
   },
   memberName: { flex: 1, fontSize: fontSize.base, fontWeight: '600', color: tokens.ink },
+  removeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  mealSlotRow: { flexDirection: 'row', gap: spacing.sm, paddingLeft: 52 },
+  mealSlot: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  mealSlotOn: { backgroundColor: tokens.sageSoft, borderColor: tokens.sage },
+  mealSlotOff: { backgroundColor: tokens.surface, borderColor: tokens.line2 },
+  mealSlotText: { fontSize: fontSize.xs, fontWeight: '700' },
+  mealSlotTextOn: { color: tokens.sageInk },
+  mealSlotTextOff: { color: tokens.muted },
+
+  memberErrorText: { color: tokens.terra, fontSize: fontSize.sm, marginTop: spacing.xs },
 
   addMemberBtn: {
     flexDirection: 'row',
@@ -631,6 +781,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: fontSize.sm, fontWeight: '600' },
   chipTextOn: { color: tokens.sageInk },
   chipTextOff: { color: tokens.ink2 },
+  customChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
 
   timeValue: { fontSize: fontSize.xl, fontWeight: '700', color: tokens.ink },
   segmentRow: { flexDirection: 'row', gap: spacing.sm },

@@ -22,7 +22,11 @@ Thumbs.db
 .idea/
 
 # Claude Code local state
-.claude/
+.claude/*
+!.claude/settings.local.json
 
 # Drizzle
 drizzle/meta/
+
+# Scraped recipe cache (raw site data — never committed; see RECIPE_PIPELINE_PLAN.md)
+data/raw-recipes/

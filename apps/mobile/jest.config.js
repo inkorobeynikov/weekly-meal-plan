@@ -11,6 +11,9 @@ module.exports = {
     // virtual store can hand out two physical react-native copies, and jest-expo
     // only initializes the native bridge for one — the other throws
     // "__fbBatchedBridgeConfig is not set".
+    // Use require.resolve so the path stays valid regardless of where Jest sets
+    // <rootDir> (apps/mobile has no local node_modules/react-native; the
+    // canonical copy lives in the monorepo root node_modules).
     '^react-native$': require.resolve('react-native'),
     '^react$': require.resolve('react')
   }

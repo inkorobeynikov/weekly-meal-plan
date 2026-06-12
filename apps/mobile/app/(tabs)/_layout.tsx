@@ -53,10 +53,12 @@ export default function TabsLayout(): React.JSX.Element | null {
           ),
         }}
       />
+      {/* Recipes tab hidden until Phase 3 populates the list/search. */}
       <Tabs.Screen
         name="recipes"
         options={{
           title: 'Przepisy',
+          href: null,
           tabBarIcon: ({ color, focused, size }) => (
             <Ionicons
               name={focused ? 'restaurant' : 'restaurant-outline'}
