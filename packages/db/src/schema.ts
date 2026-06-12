@@ -14,6 +14,8 @@ import type {
   MealsAtHome,
   Ingredient,
   RecipeSubstitution,
+  MealType,
+  CanonicalAllergen,
 } from '@meal-planner/shared'
 
 export const memberRoleEnum = pgEnum('member_role', ['planning_parent', 'adult', 'child'])
@@ -161,6 +163,19 @@ export const recipes = pgTable('recipes', {
   allergenNotes: text('allergen_notes'),
   costLevel: costLevelEnum('cost_level').notNull().default('moderate'),
   validationStatus: validationStatusEnum('validation_status').notNull().default('pending'),
+  // Recipe library (Phase 13) — metadata for the imported global pool
+  sourceUrl: text('source_url'),
+  contentHash: text('content_hash').unique(), // sha256(sourceUrl) — idempotent re-imports
+  cuisine: text('cuisine'),
+  tags: jsonb('tags').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  mealTypes: jsonb('meal_types').$type<MealType[]>().notNull().default(sql`'[]'::jsonb`),
+  // HARD CONSTRAINT support: canonical allergens enable SQL-level pre-filtering
+  // against family allergies/hardRestrictions before anything reaches the prompt.
+  allergens: jsonb('allergens')
+    .$type<CanonicalAllergen[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  isGoodForLeftovers: boolean('is_good_for_leftovers').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

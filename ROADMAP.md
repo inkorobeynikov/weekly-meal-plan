@@ -97,3 +97,14 @@
 - [x] Rewired senders to push: `plan-generate` + `retention-trigger` + new `feedback-reminder` Inngest cron (`TZ=Europe/Warsaw 0 18`, was the bot job); removed the Telegram webhook route and dropped `@meal-planner/bot` + `grammy` from `apps/web`
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
+
+## Phase 13 — Recipe library (scrape → rewrite → pool-based plans)
+
+> Replace "AI invents recipes from scratch" with "AI selects from a curated pool of real
+> Polish recipes". Full plan + legal approach: `RECIPE_PIPELINE_PLAN.md`.
+
+- [x] 13a Schema extension (migration `0004_recipe_library`) — `recipes` gains `sourceUrl`, unique `contentHash`, `cuisine`, `tags`, `mealTypes`, `allergens` (new canonical `CanonicalAllergen` enum in `packages/shared`, enables SQL-level HARD-CONSTRAINT pre-filtering), `isGoodForLeftovers`
+- [x] 13b Scraper `scripts/scrape-recipes.ts` — fetch + parse only, no LLM/DB. Sitemap or category-listing URL discovery, robots.txt honored (Disallow + Crawl-delay, ≥1 req/2s), parse cascade JSON-LD → site-specific extractor → generic microdata, raw JSON dumped to gitignored `data/raw-recipes/{contentHash}.json` (idempotent re-runs skip cached hashes). Site configs: aniagotuje.pl (sitemap; HowToStep + legacy article-body markup) and kwestiasmaku.com (listing pages; Drupal-field extractor; browser-like UA because its WAF drops bot UAs; 10s crawl-delay)
+- [ ] 13c LLM rewrite/normalize `scripts/process-recipes.ts` — rewrite steps in own words, normalize ingredients, infer cuisine/tags/mealTypes/allergens, Zod-validate (allergens from canonical enum only), upsert by `contentHash`; seed ~300–500 obiady/kolacje
+- [ ] 13d Pool-based plan generation — `recipeService.findCandidates` with SQL allergen hard-filter, `WeeklyPlanFromPoolSchema` (AI picks recipeId per slot), ad-hoc generation fallback, behind `PLAN_FROM_POOL=1`
+- [ ] 13e Surface in app — `GET /api/recipes` (search + tag filter) backing the mobile "Przepisy" tab
