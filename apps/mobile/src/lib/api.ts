@@ -9,6 +9,7 @@ import type {
   FeedbackReaction,
   Ingredient,
   ItemStatus,
+  MealBadge,
   MealsAtHome,
   MealType,
   MemberRole,
@@ -198,6 +199,10 @@ export interface Recipe {
   childFriendlyNotes: string | null;
   allergenNotes: string | null;
   costLevel: CostLevel;
+  // F4: AI flagged this as a deliberate "try something new" pick (Try-new badge).
+  isTryNew: boolean | null;
+  // F4: AI's rough per-recipe ingredient cost in grosze (integer minor units).
+  priceEstimateGrosze: number | null;
   validationStatus: ValidationStatus;
   createdAt: string;
 }
@@ -220,6 +225,11 @@ export interface PlannedMeal {
   recipeId: string;
   leftoversPlanned: boolean;
   servings: number;
+  // F4: per-dish badges derived server-side (kid_ok / leftovers / try_new).
+  // Nullable for meals planned before the column existed.
+  badgesJson: MealBadge[] | null;
+  // F4 "mark cooked" timestamp (ISO string) or null when not yet cooked.
+  cookedAt: string | null;
 }
 
 export interface MealWithRecipe {
@@ -272,6 +282,8 @@ export interface ShoppingListItem {
   status: ItemStatus;
   replacementText: string | null;
   promoHintId: string | null;
+  // F4 cost estimate for this line, in grosze (integer minor units) or null.
+  estimatedPriceGrosze: number | null;
   // Present only when matchPromos found active promotions for this item.
   promoHints?: PromotionFact[];
 }
@@ -402,6 +414,19 @@ export function replaceMeal(planId: string, mealId: string, reason?: string): Pr
     method: 'POST',
     body: reason !== undefined ? { reason } : null,
   }).then((res) => res.meal);
+}
+
+// POST /api/plans/:planId/meals/cooked -> { updated }. Marks every planned meal
+// for a recipe within the plan as cooked / not-cooked (F4 W02 "mark cooked").
+export function markMealCooked(
+  planId: string,
+  recipeId: string,
+  cooked: boolean,
+): Promise<{ updated: number }> {
+  return apiFetch<{ updated: number }>(`/api/plans/${planId}/meals/cooked`, {
+    method: 'POST',
+    body: { recipeId, cooked },
+  });
 }
 
 // GET /api/shopping/current -> { list, items } or null (only after approval).

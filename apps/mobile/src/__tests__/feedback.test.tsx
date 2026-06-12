@@ -39,6 +39,8 @@ function makeMeal(mealId: string, recipeId: string, title: string): PlanWithMeal
       recipeId,
       leftoversPlanned: false,
       servings: 4,
+      badgesJson: null,
+      cookedAt: null,
     },
     recipe: {
       id: recipeId,
@@ -56,6 +58,8 @@ function makeMeal(mealId: string, recipeId: string, title: string): PlanWithMeal
       childFriendlyNotes: null,
       allergenNotes: null,
       costLevel: 'moderate',
+      isTryNew: false,
+      priceEstimateGrosze: null,
       validationStatus: 'valid',
       createdAt: '2026-01-01T00:00:00.000Z',
     },
@@ -141,5 +145,27 @@ describe('FeedbackScreen (W09)', () => {
     await waitFor(() =>
       expect(getByText('Dzięki! Zapamiętam na przyszły tydzień 🙌')).toBeTruthy(),
     );
+  });
+
+  // F4 fix: the 😐 step previously read "Średnio" while it submitted the
+  // specific `kids_didnt_eat` value. The label now matches the value it records.
+  it('labels the kids_didnt_eat reaction "Dzieci nie zjadły" and submits that value', async () => {
+    const { getByText, getAllByLabelText, queryByLabelText } = render(<FeedbackScreen />);
+
+    await waitFor(() => expect(getByText('Pierogi ruskie')).toBeTruthy());
+
+    // The misleading "Średnio" label must be gone.
+    expect(queryByLabelText('Średnio')).toBeNull();
+
+    fireEvent.press(
+      getAllByLabelText('Dzieci nie zjadły')[0] as ReturnType<typeof getAllByLabelText>[number],
+    );
+    fireEvent.press(getByText('Zapisz opinię'));
+
+    await waitFor(() => expect(mockSubmitFeedback).toHaveBeenCalledTimes(1));
+    expect(mockSubmitFeedback).toHaveBeenCalledWith('plan-1', {
+      recipeId: 'recipe-1',
+      reaction: 'kids_didnt_eat',
+    });
   });
 });

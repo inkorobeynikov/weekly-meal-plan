@@ -32,10 +32,12 @@ import {
   type PlanWithMealsAndRecipes,
 } from '@/lib/api';
 import { usePlanGeneration } from '@/lib/usePlanGeneration';
+import { toMealCardBadges } from '@/lib/badges';
 import {
   RecipeSwapSheet,
   type SwapMealRef,
 } from '@/components/RecipeSwapSheet';
+import { PlanReasoning } from '@/components/PlanReasoning';
 
 // Dev-only affordances (e.g. the plan reset button) — hidden in production builds.
 const IS_DEV = process.env.NODE_ENV !== 'production';
@@ -342,6 +344,11 @@ export default function PlanScreen(): React.JSX.Element {
               </View>
             ) : null}
 
+            {/* F4: AI "why this plan" reasoning block. */}
+            <View style={styles.reasoningWrap}>
+              <PlanReasoning reasoning={state.plan.plan.aiReasoningSummary} />
+            </View>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -406,6 +413,7 @@ export default function PlanScreen(): React.JSX.Element {
                       placeholderSeed={recipe.title}
                       cookTimeMinutes={recipe.timeMinutes}
                       portions={meal.servings}
+                      badges={toMealCardBadges(meal.badgesJson)}
                       onPress={() => openRecipe(recipe.id)}
                       onSwap={() =>
                         openSwap(
@@ -634,6 +642,10 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '700',
     color: tokens.sageInk,
+  },
+  reasoningWrap: {
+    marginHorizontal: spacing['2xl'],
+    marginTop: spacing.lg,
   },
   banner: {
     flexDirection: 'row',

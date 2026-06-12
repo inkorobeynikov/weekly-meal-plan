@@ -14,6 +14,7 @@ import type {
   MealsAtHome,
   Ingredient,
   RecipeSubstitution,
+  MealBadge,
   MealType,
   CanonicalAllergen,
 } from '@meal-planner/shared'
@@ -170,6 +171,12 @@ export const recipes = pgTable('recipes', {
   childFriendlyNotes: text('child_friendly_notes'),
   allergenNotes: text('allergen_notes'),
   costLevel: costLevelEnum('cost_level').notNull().default('moderate'),
+  // F4 "intelligent surface" — additive, nullable for backward compatibility.
+  // isTryNew: the AI flagged this as a deliberate "try something new" pick.
+  isTryNew: boolean('is_try_new'),
+  // priceEstimateGrosze: AI's rough per-recipe ingredient cost in GROSZE
+  // (integer minor units — never floats). Nullable: older rows / unestimated.
+  priceEstimateGrosze: integer('price_estimate_grosze'),
   validationStatus: validationStatusEnum('validation_status').notNull().default('pending'),
   // Recipe library (Phase 13) — metadata for the imported global pool
   sourceUrl: text('source_url'),
@@ -211,6 +218,12 @@ export const plannedMeals = pgTable('planned_meals', {
     .references(() => recipes.id),
   leftoversPlanned: boolean('leftovers_planned').notNull().default(false),
   servings: integer('servings').notNull(),
+  // F4 per-dish badges (kid_ok / leftovers / try_new), derived in the domain
+  // layer from recipe flags and persisted so the UI doesn't re-derive. Nullable
+  // for backward compatibility with rows planned before this column existed.
+  badgesJson: jsonb('badges_json').$type<MealBadge[]>(),
+  // F4 "mark cooked" action (W02). Nullable: null until the user marks it cooked.
+  cookedAt: timestamp('cooked_at', { withTimezone: true }),
 })
 
 export const shoppingLists = pgTable('shopping_lists', {
@@ -242,6 +255,10 @@ export const shoppingListItems = pgTable('shopping_list_items', {
   status: itemStatusEnum('status').notNull().default('pending'),
   replacementText: text('replacement_text'),
   promoHintId: uuid('promo_hint_id'),
+  // F4 cost estimate (the genuinely-new piece of shopping data). Estimated price
+  // for this aggregated line in GROSZE (integer minor units — never floats).
+  // Nullable: older rows / items we cannot price.
+  estimatedPriceGrosze: integer('estimated_price_grosze'),
 })
 
 export const dishFeedback = pgTable('dish_feedback', {

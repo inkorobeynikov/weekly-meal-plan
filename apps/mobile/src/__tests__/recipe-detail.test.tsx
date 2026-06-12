@@ -11,9 +11,13 @@ jest.mock('expo-router', () => ({
 
 const mockGetRecipe: jest.Mock<Promise<Recipe>, [string]> = jest.fn();
 const mockGetHousehold: jest.Mock<Promise<FamilyResponse>, []> = jest.fn();
+const mockMarkMealCooked: jest.Mock<Promise<{ updated: number }>, [string, string, boolean]> =
+  jest.fn();
 jest.mock('../lib/api', () => ({
   getRecipe: (id: string): Promise<Recipe> => mockGetRecipe(id),
   getHousehold: (): Promise<FamilyResponse> => mockGetHousehold(),
+  markMealCooked: (planId: string, recipeId: string, cooked: boolean): Promise<{ updated: number }> =>
+    mockMarkMealCooked(planId, recipeId, cooked),
 }));
 
 // Mock the sibling swap sheet so this test does not depend on its impl.
@@ -45,6 +49,8 @@ function makeRecipe(overrides: Partial<Recipe> = {}): Recipe {
     childFriendlyNotes: null,
     allergenNotes: null,
     costLevel: 'moderate',
+    isTryNew: false,
+    priceEstimateGrosze: null,
     validationStatus: 'valid',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...overrides,
@@ -90,6 +96,7 @@ beforeEach(() => {
   mockRouteParams = { id: 'r1' };
   mockGetRecipe.mockReset();
   mockGetHousehold.mockReset();
+  mockMarkMealCooked.mockReset().mockResolvedValue({ updated: 1 });
 });
 
 describe('W02 Recipe Detail', () => {
@@ -141,5 +148,54 @@ describe('W02 Recipe Detail', () => {
     // Switch to Zamienniki: substitution chip visible.
     fireEvent.press(getByText('Zamienniki'));
     expect(getByText('mleko → mleko owsiane')).toBeTruthy();
+  });
+
+  // F4 W02: collapsible storage / for-kids sections appear when the recipe
+  // carries those notes, and start collapsed (body hidden until tapped).
+  it('renders collapsible storage / for-kids sections that expand on tap', async () => {
+    mockGetRecipe.mockResolvedValue(
+      makeRecipe({
+        storageNotes: 'Przechowuj w lodówce do 2 dni.',
+        childFriendlyNotes: 'Podawaj bez ostrych przypraw.',
+      }),
+    );
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { getByText, queryByText, getByTestId } = render(<RecipeDetailScreen />);
+
+    await waitFor(() => expect(getByText('Przechowywanie')).toBeTruthy());
+    // Bodies are collapsed initially.
+    expect(queryByText('Przechowuj w lodówce do 2 dni.')).toBeNull();
+
+    fireEvent.press(getByTestId('recipe-section-storage-header'));
+    expect(getByText('Przechowuj w lodówce do 2 dni.')).toBeTruthy();
+  });
+
+  // F4 W02: "mark cooked" is only offered with plan context (planId param); it
+  // calls markMealCooked and flips the label.
+  it('marks the dish cooked when plan context is present', async () => {
+    mockRouteParams = { id: 'r1', planId: 'plan-1', mealId: 'meal-1' };
+    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { getByTestId, getByText } = render(<RecipeDetailScreen />);
+
+    await waitFor(() => expect(getByTestId('recipe-mark-cooked')).toBeTruthy());
+    fireEvent.press(getByTestId('recipe-mark-cooked'));
+
+    await waitFor(() =>
+      expect(mockMarkMealCooked).toHaveBeenCalledWith('plan-1', 'r1', true),
+    );
+    await waitFor(() => expect(getByText('Ugotowane ✓')).toBeTruthy());
+  });
+
+  it('hides the "mark cooked" action without plan context', async () => {
+    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { queryByTestId, getByText } = render(<RecipeDetailScreen />);
+
+    await waitFor(() => expect(getByText('Łosoś pieczony')).toBeTruthy());
+    expect(queryByTestId('recipe-mark-cooked')).toBeNull();
   });
 });

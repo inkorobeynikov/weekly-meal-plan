@@ -16,13 +16,21 @@ import {
   tokens,
 } from '@meal-planner/ui-native';
 import type { Difficulty } from '@meal-planner/shared';
+import { costLevelLabel, deriveMealBadges, formatGroszeAsZl } from '@meal-planner/shared';
+import { toMealCardBadges } from '@/lib/badges';
 
-import { getHousehold, getRecipe, type Recipe } from '@/lib/api';
+import {
+  getHousehold,
+  getRecipe,
+  markMealCooked,
+  type Recipe,
+} from '@/lib/api';
 import { recipeAllergens, mealViolatesAllergies } from '@/lib/allergies';
 import {
   RecipeSwapSheet,
   type SwapMealRef,
 } from '@/components/RecipeSwapSheet';
+import { CollapsibleSection } from '@/components/CollapsibleSection';
 
 // Blurhash placeholder for the hero image while the real photo loads (used only
 // when an actual imageUri is present — otherwise RecipePlaceholder is shown).
@@ -65,6 +73,26 @@ export default function RecipeDetailScreen(): React.JSX.Element {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [tab, setTab] = useState<Tab>('ingredients');
   const [swapOpen, setSwapOpen] = useState(false);
+  // F4 "mark cooked": local cooked flag + in-flight guard. Requires plan context
+  // (planId) — the button is hidden otherwise.
+  const [cooked, setCooked] = useState(false);
+  const [cookingPending, setCookingPending] = useState(false);
+  const planId = typeof params.planId === 'string' ? params.planId : '';
+
+  const onToggleCooked = useCallback(async (): Promise<void> => {
+    if (!planId || state.kind !== 'ready' || cookingPending) return;
+    const next = !cooked;
+    setCookingPending(true);
+    setCooked(next);
+    try {
+      await markMealCooked(planId, state.recipe.id, next);
+    } catch {
+      // Revert on failure so the toggle reflects the server truth.
+      setCooked(!next);
+    } finally {
+      setCookingPending(false);
+    }
+  }, [planId, state, cooked, cookingPending]);
 
   const load = useCallback(async (): Promise<void> => {
     setState({ kind: 'loading' });
@@ -126,6 +154,26 @@ export default function RecipeDetailScreen(): React.JSX.Element {
   const heroUri = typeof params.imageUri === 'string' ? params.imageUri : undefined;
   const isSafe = matchedAllergens.length === 0;
   const canSwap = swapMeal !== null;
+  const canMarkCooked = planId.length > 0;
+
+  // F4: derive the per-dish badges for the detail view. The recipe row persists
+  // isTryNew directly; isKidFriendly/isGoodForLeftovers aren't stored on the
+  // recipe, so we approximate them from the presence of their guidance notes
+  // (childFriendlyNotes / leftoversNotes). A recipe is never itself a leftover
+  // serving, so isLeftoverMeal is false here.
+  const dishBadges = toMealCardBadges(
+    deriveMealBadges({
+      isKidFriendly: recipe.childFriendlyNotes !== null,
+      isGoodForLeftovers: recipe.leftoversNotes !== null,
+      isTryNew: recipe.isTryNew,
+      isLeftoverMeal: false,
+    }),
+  );
+
+  // F4 price: prefer the precise grosze estimate, fall back to the qualitative
+  // cost level label.
+  const priceLabel =
+    formatGroszeAsZl(recipe.priceEstimateGrosze) ?? costLevelLabel(recipe.costLevel);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -154,7 +202,20 @@ export default function RecipeDetailScreen(): React.JSX.Element {
             <Tag label={`${recipe.timeMinutes} min`} />
             <Tag label={`${recipe.servings} porcji`} />
             <Badge tone="plum" label={DIFFICULTY_LABELS[recipe.difficulty]} />
+            {/* F4 price indicator: precise AI estimate when present, else the
+                qualitative cost level. */}
+            {priceLabel ? <Badge tone="amber" label={priceLabel} /> : null}
           </View>
+
+          {/* F4 per-dish badges (Kid-ok / Leftovers / Try-new), derived from the
+              recipe flags so detail matches the day cards. */}
+          {dishBadges.length > 0 ? (
+            <View testID="recipe-badges" style={styles.badgeRow}>
+              {dishBadges.map((b, i) => (
+                <Badge key={`${b.label}-${i}`} tone={b.tone} label={b.label} />
+              ))}
+            </View>
+          ) : null}
 
           {/* Allergy badge — HARD CONSTRAINT surfacing. Red warning always wins
               when the recipe contains a household allergen. */}
@@ -203,22 +264,78 @@ export default function RecipeDetailScreen(): React.JSX.Element {
               <SubstitutionsTab recipe={recipe} />
             )}
           </View>
+
+          {/* F4 W02: collapsible storage / for-kids / swaps sections. Each is
+              shown only when the recipe actually carries that guidance. */}
+          <View style={styles.sections}>
+            {recipe.storageNotes ? (
+              <CollapsibleSection
+                testID="recipe-section-storage"
+                title="Przechowywanie"
+                icon="snow-outline"
+              >
+                <Text style={styles.sectionText}>{recipe.storageNotes}</Text>
+              </CollapsibleSection>
+            ) : null}
+
+            {recipe.childFriendlyNotes ? (
+              <CollapsibleSection
+                testID="recipe-section-kids"
+                title="Dla dzieci"
+                icon="happy-outline"
+              >
+                <Text style={styles.sectionText}>{recipe.childFriendlyNotes}</Text>
+              </CollapsibleSection>
+            ) : null}
+
+            {recipe.substitutionsJson.length > 0 ? (
+              <CollapsibleSection
+                testID="recipe-section-swaps"
+                title="Zamienniki składników"
+                icon="swap-horizontal-outline"
+              >
+                <View style={styles.swapList}>
+                  {recipe.substitutionsJson.map((sub, i) => (
+                    <Text key={`${sub.original}-${i}`} style={styles.sectionText}>
+                      • {sub.original} → {sub.substitute}
+                      {sub.note ? ` (${sub.note})` : ''}
+                    </Text>
+                  ))}
+                </View>
+              </CollapsibleSection>
+            ) : null}
+          </View>
         </View>
       </ScrollView>
 
-      {/* Sticky bottom CTA. Hidden entirely when there is no plan context to swap
-          (arriving from the recipe library). An invisible disabled button would be
-          a dead-end affordance — better to show nothing at all. */}
-      {canSwap ? (
+      {/* Sticky bottom CTA. Hidden entirely when there is no plan context
+          (arriving from the recipe library). With plan context we offer the
+          "mark cooked" action (F4 W02) and, when a meal is wired, the swap CTA. */}
+      {canMarkCooked || canSwap ? (
         <View style={styles.ctaBar}>
-          <Button
-            variant="primary"
-            onPress={() => setSwapOpen(true)}
-            accessibilityLabel="Zamień w planie"
-            testID="recipe-swap-cta"
-          >
-            Zamień w planie
-          </Button>
+          {canMarkCooked ? (
+            <Button
+              variant={cooked ? 'secondary' : 'primary'}
+              loading={cookingPending}
+              onPress={() => void onToggleCooked()}
+              accessibilityLabel={cooked ? 'Oznacz jako nieugotowane' : 'Oznacz jako ugotowane'}
+              testID="recipe-mark-cooked"
+              style={styles.ctaBtn}
+            >
+              {cooked ? 'Ugotowane ✓' : 'Oznacz jako ugotowane'}
+            </Button>
+          ) : null}
+          {canSwap ? (
+            <Button
+              variant={canMarkCooked ? 'ghost' : 'primary'}
+              onPress={() => setSwapOpen(true)}
+              accessibilityLabel="Zamień w planie"
+              testID="recipe-swap-cta"
+              style={styles.ctaBtn}
+            >
+              Zamień w planie
+            </Button>
+          ) : null}
         </View>
       ) : null}
 
@@ -371,6 +488,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  sections: {
+    gap: spacing.md,
+  },
+  sectionText: {
+    fontSize: fontSize.base,
+    color: tokens.ink2,
+    lineHeight: 22,
+  },
+  swapList: {
+    gap: spacing.xs,
+  },
 
   allergyBadge: {
     alignSelf: 'flex-start',
@@ -501,11 +634,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    flexDirection: 'row',
+    gap: spacing.md,
     padding: spacing.lg,
     backgroundColor: tokens.surface,
     borderTopWidth: 1,
     borderTopColor: tokens.line,
   },
+  ctaBtn: { flex: 1 },
 
   errorWrap: {
     flex: 1,
