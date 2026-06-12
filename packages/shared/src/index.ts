@@ -19,6 +19,20 @@ export type VarietyMode = 'safe' | 'balanced' | 'adventurous'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type CostLevel = 'cheap' | 'moderate' | 'expensive'
 export type ValidationStatus = 'pending' | 'valid' | 'invalid'
+// Canonical allergen vocabulary for the imported recipe pool (Phase 13).
+// allergies/hardRestrictions are HARD CONSTRAINTS — this fixed list enables
+// SQL-level pre-filtering of pool recipes before anything reaches the prompt.
+export type CanonicalAllergen =
+  | 'gluten'
+  | 'laktoza'
+  | 'jaja'
+  | 'orzechy'
+  | 'ryby'
+  | 'skorupiaki'
+  | 'soja'
+  | 'seler'
+  | 'gorczyca'
+  | 'sezam'
 
 export interface MealsAtHome {
   breakfast: boolean
@@ -91,4 +105,16 @@ export const VALIDATION_STATUSES: readonly ValidationStatus[] = [
   'pending',
   'valid',
   'invalid',
+] as const
+export const CANONICAL_ALLERGENS: readonly CanonicalAllergen[] = [
+  'gluten',
+  'laktoza',
+  'jaja',
+  'orzechy',
+  'ryby',
+  'skorupiaki',
+  'soja',
+  'seler',
+  'gorczyca',
+  'sezam',
 ] as const
