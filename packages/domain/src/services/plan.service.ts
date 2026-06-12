@@ -17,17 +17,25 @@ import {
   MODELS,
   WeeklyPlanSchema,
   RecipeSchema,
+  WeeklyPlanFromPoolSchema,
+  PoolReplacementSchema,
   zodResponseFormat,
   buildSystemPrompt,
   buildUserPrompt,
+  buildPoolSystemPrompt,
+  buildPoolSelectionPrompt,
+  buildPoolReplacementPrompt,
   type Recipe as AIRecipe,
   type PlannedMeal as AIPlannedMeal,
   type WeeklyPlan as AIWeeklyPlan,
+  type WeeklyPlanFromPool,
   type PlanGenerationContext,
 } from "@meal-planner/ai";
 import * as householdService from "./household.service.js";
 import * as feedbackService from "./feedback.service.js";
 import * as analyticsService from "./analytics.service.js";
+import * as recipeService from "./recipe.service.js";
+import type { RecipeCandidate } from "./recipe.service.js";
 
 export interface GeneratePlanInput {
   householdId: string;
@@ -85,6 +93,226 @@ function assertNoForbidden(
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13d — pool-based generation behind PLAN_FROM_POOL=1. The pool path
+// SELECTS existing global recipes (source 'imported', householdId NULL); on
+// any failure (pool too small, invalid AI selection) it falls back to the
+// unchanged ad-hoc generation below.
+// ---------------------------------------------------------------------------
+
+function planFromPoolEnabled(): boolean {
+  return process.env.PLAN_FROM_POOL === "1";
+}
+
+// Thrown by the pool path to trigger the ad-hoc fallback.
+class PoolGenerationError extends Error {}
+
+// HARD CONSTRAINT second line of defense for pool picks: even though
+// findCandidates already excluded forbidden allergens at the SQL level, run
+// the same textual check the ad-hoc path uses over the stored recipe rows.
+function findRowConstraintViolation(
+  recipe: Recipe,
+  forbidden: string[],
+): string | null {
+  const needles = forbidden
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+  if (needles.length === 0) return null;
+  const hay = [
+    recipe.title,
+    ...recipe.ingredientsJson.map((i) => i.name),
+    ...recipe.stepsJson,
+    recipe.allergenNotes ?? "",
+  ]
+    .join(" \n ")
+    .toLowerCase();
+  for (const needle of needles) {
+    if (hay.includes(needle)) return needle;
+  }
+  return null;
+}
+
+// Badge source for a stored pool recipe. The pool has no isKidFriendly column;
+// the presence of child-friendly notes is the honest proxy until PR-4 adds one.
+function poolBadgeSource(recipe: Recipe): {
+  isKidFriendly: boolean;
+  isGoodForLeftovers: boolean;
+  isTryNew: boolean | null;
+} {
+  return {
+    isKidFriendly: recipe.childFriendlyNotes !== null,
+    isGoodForLeftovers: recipe.isGoodForLeftovers,
+    isTryNew: recipe.isTryNew,
+  };
+}
+
+// Validate the model's selections against what was actually offered: every
+// recipeId must come from the candidate list, a candidate may be used once
+// (except leftovers), and a lunch_leftover must reuse an earlier day's dinner
+// that is actually good for leftovers.
+function validatePoolSelections(
+  plan: WeeklyPlanFromPool,
+  candidatesById: Map<string, RecipeCandidate>,
+): void {
+  const dinnersByOffset = new Map<number, string>();
+  for (const meal of plan.meals) {
+    if (!candidatesById.has(meal.recipeId)) {
+      throw new PoolGenerationError(
+        `AI selected recipeId ${meal.recipeId} that was not offered`,
+      );
+    }
+    if (meal.mealType === "dinner") dinnersByOffset.set(meal.dayOffset, meal.recipeId);
+  }
+  const usedFresh = new Set<string>();
+  for (const meal of plan.meals) {
+    if (meal.mealType === "lunch_leftover") {
+      const parentDinner = dinnersByOffset.get(meal.dayOffset - 1);
+      if (parentDinner !== meal.recipeId) {
+        throw new PoolGenerationError(
+          `lunch_leftover on dayOffset ${meal.dayOffset} does not reuse the previous day's dinner`,
+        );
+      }
+      const candidate = candidatesById.get(meal.recipeId);
+      if (!candidate?.isGoodForLeftovers) {
+        throw new PoolGenerationError(
+          `lunch_leftover reuses "${candidate?.title}" which is not good for leftovers`,
+        );
+      }
+      continue;
+    }
+    if (usedFresh.has(meal.recipeId)) {
+      throw new PoolGenerationError(
+        `candidate ${meal.recipeId} selected more than once for fresh meals`,
+      );
+    }
+    usedFresh.add(meal.recipeId);
+  }
+}
+
+async function callAIForPoolPlan(
+  context: PlanGenerationContext,
+  candidates: RecipeCandidate[],
+): Promise<WeeklyPlanFromPool> {
+  const openai = getOpenAI();
+  const candidatesById = new Map(candidates.map((c) => [c.id, c]));
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
+    try {
+      const completion = await openai.beta.chat.completions.parse({
+        // Selection over ~50 short candidate lines is a much easier task than
+        // inventing recipes — the fast tier is enough and keeps it cheap.
+        model: MODELS.fast,
+        messages: [
+          { role: "system", content: buildPoolSystemPrompt() },
+          { role: "user", content: buildUserPrompt(context) },
+          { role: "user", content: buildPoolSelectionPrompt(candidates) },
+        ],
+        response_format: zodResponseFormat(WeeklyPlanFromPoolSchema, "weekly_plan_from_pool"),
+      });
+      const raw = completion.choices[0]?.message.parsed;
+      if (!raw) throw new PoolGenerationError("AI returned no parsed content");
+      const plan = WeeklyPlanFromPoolSchema.parse(raw);
+      validatePoolSelections(plan, candidatesById);
+      return plan;
+    } catch (err) {
+      lastError = err;
+      if (attempt >= MAX_AI_ATTEMPTS) break;
+    }
+  }
+  throw new PoolGenerationError(
+    `Pool plan selection failed after ${MAX_AI_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
+async function generatePlanFromPool(
+  input: GeneratePlanInput,
+  context: PlanGenerationContext,
+  dayCount: number,
+): Promise<PlanWithMeals> {
+  const candidates = await recipeService.findCandidates(input.householdId, {
+    limit: 50,
+  });
+  // Need a real choice for every slot; otherwise let the ad-hoc path handle it.
+  const minCandidates = Math.max(20, dayCount * 2);
+  if (candidates.length < minCandidates) {
+    throw new PoolGenerationError(
+      `pool too small: ${candidates.length} candidates (< ${minCandidates})`,
+    );
+  }
+
+  const aiPlan = await callAIForPoolPlan(context, candidates);
+
+  const selectedIds = [...new Set(aiPlan.meals.map((m) => m.recipeId))];
+  const recipeRows = await db
+    .select()
+    .from(recipes)
+    .where(inArray(recipes.id, selectedIds));
+  const rowsById = new Map(recipeRows.map((r) => [r.id, r]));
+
+  // HARD CONSTRAINT: second-line textual guard over the stored recipes.
+  const forbidden = [
+    ...context.preferences.allergies,
+    ...context.preferences.hardRestrictions,
+  ];
+  for (const id of selectedIds) {
+    const row = rowsById.get(id);
+    if (!row) throw new PoolGenerationError(`selected recipe ${id} not found`);
+    const hit = findRowConstraintViolation(row, forbidden);
+    if (hit !== null) {
+      throw new PoolGenerationError(
+        `HARD CONSTRAINT violated: pool recipe "${row.title}" contains forbidden item "${hit}"`,
+      );
+    }
+  }
+
+  const [planRow] = await db
+    .insert(weeklyPlans)
+    .values({
+      householdId: input.householdId,
+      weekStartDate: input.weekStartDate,
+      status: "draft",
+      aiReasoningSummary: aiPlan.reasoningSummary,
+    })
+    .returning();
+  if (!planRow) throw new Error("Failed to insert weekly_plans row");
+
+  const insertedMeals: PlannedMeal[] = [];
+  for (const meal of aiPlan.meals) {
+    const recipeRow = rowsById.get(meal.recipeId);
+    if (!recipeRow) throw new PoolGenerationError(`selected recipe ${meal.recipeId} not found`);
+    const [mealRow] = await db
+      .insert(plannedMeals)
+      .values({
+        weeklyPlanId: planRow.id,
+        date: addDays(input.weekStartDate, meal.dayOffset),
+        mealType: meal.mealType,
+        // Pool mode references the shared global recipe directly — recipe
+        // identities stay stable so dishFeedback compounds across weeks.
+        recipeId: recipeRow.id,
+        leftoversPlanned: meal.leftoversPlanned,
+        servings: recipeRow.servings,
+        badgesJson: deriveMealBadges({
+          ...poolBadgeSource(recipeRow),
+          isLeftoverMeal: meal.mealType === "lunch_leftover",
+        }),
+      })
+      .returning();
+    if (!mealRow) throw new Error("Failed to insert planned_meal row");
+    insertedMeals.push(mealRow);
+  }
+
+  await analyticsService.trackEvent(input.householdId, null, "plan_generated", {
+    householdId: input.householdId,
+    weekStartDate: input.weekStartDate,
+    mealCount: insertedMeals.length,
+    fromPool: true,
+  });
+
+  return { plan: planRow, meals: insertedMeals };
 }
 
 // The plan window can run 1..14 days (today through the Sunday after next).
@@ -230,6 +458,21 @@ export async function generateWeeklyPlan(
     weekStartDate: input.weekStartDate,
     dayCount,
   };
+
+  // Phase 13d: pool-based selection behind PLAN_FROM_POOL=1. Any pool failure
+  // (too few candidates after the allergen hard-filter, invalid selection)
+  // falls back to the unchanged ad-hoc generation below.
+  if (planFromPoolEnabled()) {
+    try {
+      return await generatePlanFromPool(input, context, dayCount);
+    } catch (err) {
+      console.warn(
+        `[plan] pool generation failed, falling back to ad-hoc: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   const aiPlan = await callAIForWeeklyPlan(context);
 
@@ -405,6 +648,109 @@ async function callAIForSingleRecipe(
   );
 }
 
+// What the persistence + leftover-repointing logic needs to know about the
+// replacement dish, regardless of whether it came from the pool or ad-hoc.
+interface ReplacementPick {
+  recipeId: string;
+  servings: number;
+  isGoodForLeftovers: boolean;
+  badgeSource: {
+    isKidFriendly: boolean;
+    isGoodForLeftovers: boolean;
+    isTryNew: boolean | null;
+  };
+}
+
+// Phase 13d: pool-mode single-slot replacement. Candidates are already
+// hard-filtered for allergens at the SQL level; the textual guard runs again
+// on the picked row. Throws PoolGenerationError → caller falls back to ad-hoc.
+async function pickReplacementFromPool(
+  householdId: string,
+  context: PlanGenerationContext,
+  reason: string | undefined,
+  previousTitle: string,
+  mealType: string,
+  excludeRecipeIds: string[],
+  otherMeals: OtherMealRef[],
+): Promise<ReplacementPick> {
+  const slot = mealType === "dinner" ? "dinner" : "lunch";
+  const candidates = await recipeService.findCandidates(householdId, {
+    limit: 30,
+    mealType: slot,
+    excludeRecipeIds,
+  });
+  if (candidates.length < 3) {
+    throw new PoolGenerationError(
+      `pool too small for replacement: ${candidates.length} candidates`,
+    );
+  }
+  const candidatesById = new Map(candidates.map((c) => [c.id, c]));
+
+  const openai = getOpenAI();
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
+    try {
+      const completion = await openai.beta.chat.completions.parse({
+        model: MODELS.fast,
+        messages: [
+          { role: "system", content: buildPoolSystemPrompt() },
+          { role: "user", content: buildUserPrompt(context) },
+          {
+            role: "user",
+            content: buildPoolReplacementPrompt(
+              candidates,
+              previousTitle,
+              mealType,
+              reason,
+              otherMeals,
+            ),
+          },
+        ],
+        response_format: zodResponseFormat(PoolReplacementSchema, "pool_replacement"),
+      });
+      const raw = completion.choices[0]?.message.parsed;
+      if (!raw) throw new PoolGenerationError("AI returned no parsed content");
+      const pick = PoolReplacementSchema.parse(raw);
+      if (!candidatesById.has(pick.recipeId)) {
+        throw new PoolGenerationError(
+          `AI selected recipeId ${pick.recipeId} that was not offered`,
+        );
+      }
+      const [row] = await db
+        .select()
+        .from(recipes)
+        .where(eq(recipes.id, pick.recipeId))
+        .limit(1);
+      if (!row) throw new PoolGenerationError(`selected recipe ${pick.recipeId} not found`);
+      // HARD CONSTRAINT: second-line textual guard on the stored recipe.
+      const forbidden = [
+        ...context.preferences.allergies,
+        ...context.preferences.hardRestrictions,
+      ];
+      const hit = findRowConstraintViolation(row, forbidden);
+      if (hit !== null) {
+        throw new PoolGenerationError(
+          `HARD CONSTRAINT violated: pool recipe "${row.title}" contains forbidden item "${hit}"`,
+        );
+      }
+      return {
+        recipeId: row.id,
+        servings: row.servings,
+        isGoodForLeftovers: row.isGoodForLeftovers,
+        badgeSource: poolBadgeSource(row),
+      };
+    } catch (err) {
+      lastError = err;
+      if (attempt >= MAX_AI_ATTEMPTS) break;
+    }
+  }
+  throw new PoolGenerationError(
+    `Pool replacement failed after ${MAX_AI_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
 export async function replaceMeal(
   input: ReplaceMealInput,
 ): Promise<PlannedMeal> {
@@ -460,6 +806,7 @@ export async function replaceMeal(
       id: plannedMeals.id,
       date: plannedMeals.date,
       mealType: plannedMeals.mealType,
+      recipeId: plannedMeals.recipeId,
       recipeTitle: recipes.title,
     })
     .from(plannedMeals)
@@ -515,30 +862,69 @@ export async function replaceMeal(
     dayCount,
   };
 
-  const newRecipe = await callAIForSingleRecipe(
-    context,
-    input.reason,
-    previousRecipe.title,
-    existingMeal.mealType,
-    dayOffset,
-    otherMeals,
-  );
+  // Phase 13d: try a pool pick first (behind PLAN_FROM_POOL=1); fall back to
+  // ad-hoc generation on any pool failure. Both paths produce a ReplacementPick.
+  let pick: ReplacementPick | null = null;
+  if (planFromPoolEnabled()) {
+    try {
+      pick = await pickReplacementFromPool(
+        plan.householdId,
+        context,
+        input.reason,
+        previousRecipe.title,
+        existingMeal.mealType,
+        planMealsWithRecipes.map((m) => m.recipeId),
+        otherMeals,
+      );
+    } catch (err) {
+      console.warn(
+        `[plan] pool replacement failed, falling back to ad-hoc: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
-  const [recipeRow] = await db
-    .insert(recipes)
-    .values(recipeToNewRecipe(newRecipe, plan.householdId))
-    .returning();
-  if (!recipeRow) throw new Error("Failed to insert replacement recipe row");
+  if (!pick) {
+    const newRecipe = await callAIForSingleRecipe(
+      context,
+      input.reason,
+      previousRecipe.title,
+      existingMeal.mealType,
+      dayOffset,
+      otherMeals,
+    );
+
+    const [recipeRow] = await db
+      .insert(recipes)
+      .values(recipeToNewRecipe(newRecipe, plan.householdId))
+      .returning();
+    if (!recipeRow) throw new Error("Failed to insert replacement recipe row");
+
+    pick = {
+      recipeId: recipeRow.id,
+      servings: newRecipe.servings,
+      isGoodForLeftovers: newRecipe.isGoodForLeftovers,
+      badgeSource: {
+        isKidFriendly: newRecipe.isKidFriendly,
+        isGoodForLeftovers: newRecipe.isGoodForLeftovers,
+        isTryNew: newRecipe.isTryNew,
+      },
+    };
+  }
 
   const oldRecipeId = existingMeal.recipeId;
 
   const [updatedMeal] = await db
     .update(plannedMeals)
     .set({
-      recipeId: recipeRow.id,
-      servings: newRecipe.servings,
+      recipeId: pick.recipeId,
+      servings: pick.servings,
       // F4: re-derive badges for the swapped dish so they stay accurate.
-      badgesJson: deriveBadgesForMeal(newRecipe, existingMeal.mealType),
+      badgesJson: deriveMealBadges({
+        ...pick.badgeSource,
+        isLeftoverMeal: existingMeal.mealType === "lunch_leftover",
+      }),
     })
     .where(eq(plannedMeals.id, existingMeal.id))
     .returning();
@@ -568,14 +954,14 @@ export async function replaceMeal(
       );
     if (linkedLeftovers.length > 0) {
       const ids = linkedLeftovers.map((m) => m.id);
-      if (newRecipe.isGoodForLeftovers) {
+      if (pick.isGoodForLeftovers) {
         await db
           .update(plannedMeals)
           .set({
-            recipeId: recipeRow.id,
-            servings: newRecipe.servings,
+            recipeId: pick.recipeId,
+            servings: pick.servings,
             // These rows are lunch_leftover servings of the new dinner.
-            badgesJson: deriveBadgesForMeal(newRecipe, "lunch_leftover"),
+            badgesJson: deriveMealBadges({ ...pick.badgeSource, isLeftoverMeal: true }),
           })
           .where(inArray(plannedMeals.id, ids));
         leftoversRepointed = ids.length;

@@ -181,3 +181,73 @@ export const CANONICAL_ALLERGENS: readonly CanonicalAllergen[] = [
   'gorczyca',
   'sezam',
 ] as const
+
+// ---------------------------------------------------------------------------
+// HARD CONSTRAINT support (Phase 13d): map free-text family allergies /
+// hardRestrictions (onboarding lets users type anything: "orzechy włoskie",
+// "nabiał", "Gluten") onto the canonical allergen vocabulary so pool recipes
+// can be excluded at the SQL level BEFORE anything reaches the prompt.
+// Matching is deliberately generous — a false positive only narrows the pool,
+// a false negative would surface a dangerous recipe (the textual second-line
+// guard in plan.service still runs after generation).
+// ---------------------------------------------------------------------------
+
+// Substring matches by default; entries prefixed with '=' must match a whole
+// word ("ser" must not fire inside "seler").
+const ALLERGEN_SYNONYMS: Record<CanonicalAllergen, readonly string[]> = {
+  gluten: ['gluten', 'maka', 'pszenica', 'pszenn', 'zyto', 'jeczmien', 'orkisz'],
+  laktoza: [
+    'laktoza',
+    'nabial',
+    'mleko',
+    'mleczn',
+    'smietan',
+    'maslo',
+    'jogurt',
+    'twarog',
+    '=ser',
+    '=sery',
+    '=serek',
+  ],
+  jaja: ['jaja', 'jajka', 'jajko', 'jajo', 'jajec'],
+  orzechy: ['orzech', 'migdal', 'nerkowc', 'pistacj', 'arachid'],
+  ryby: ['=ryba', '=ryby', '=ryb', 'rybn', 'losos', 'dorsz', 'sledz', 'makrela', 'tunczyk'],
+  skorupiaki: ['skorupiak', 'krewetk', 'owoce morza', 'malze', 'krab', 'kalmar', 'osmiornic'],
+  soja: ['soja', 'sojow', 'tofu'],
+  seler: ['seler'],
+  gorczyca: ['gorczyc', 'musztard'],
+  sezam: ['sezam', 'tahini'],
+}
+
+function stripPolishDiacritics(input: string): string {
+  const map: Record<string, string> = {
+    ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z',
+  }
+  return input
+    .toLowerCase()
+    .replace(/[ąćęłńóśźż]/g, (ch) => map[ch] ?? ch)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+}
+
+/**
+ * Map free-text allergy/restriction terms to the canonical allergens they
+ * mention. "orzechy włoskie" → ['orzechy'], "nabiał" → ['laktoza'].
+ * Terms that match nothing (e.g. dietary rules like "bez wieprzowiny") are
+ * ignored here — they are still enforced by the textual post-generation guard.
+ */
+export function matchCanonicalAllergens(terms: string[]): CanonicalAllergen[] {
+  const matched = new Set<CanonicalAllergen>()
+  for (const term of terms) {
+    const t = stripPolishDiacritics(term.trim())
+    if (!t) continue
+    const words = t.split(/[^a-z%0-9]+/).filter(Boolean)
+    for (const allergen of CANONICAL_ALLERGENS) {
+      const hit = ALLERGEN_SYNONYMS[allergen].some((syn) =>
+        syn.startsWith('=') ? words.includes(syn.slice(1)) : t.includes(syn),
+      )
+      if (hit) matched.add(allergen)
+    }
+  }
+  return [...matched]
+}
