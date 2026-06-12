@@ -98,7 +98,7 @@
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
 
-## Phase 13 — Weekly loop fixes (F1) ✅ done
+## F1 — Weekly loop & async generation fixes ✅ done
 
 - [x] Shared async plan-generation pattern (`usePlanGeneration` hook): generate → poll `getWeeklyPlan` every 8s with a hard ceiling (~15 polls / ~2 min). On timeout it switches to an explicit error + "Spróbuj ponownie" action instead of polling forever. Reused across plan, review and shopping screens
 - [x] W04 "Wygeneruj nowy" now waits for a genuinely NEW draft (different plan id) via the poll pattern with a "Generuję nowy plan…" state — no longer returns the stale draft instantly
@@ -108,3 +108,14 @@
 - [x] W01 day cards: swap affordance opens the existing `RecipeSwapSheet`; feedback entry point added
 - [x] W03 shopping housekeeping: checkbox now toggles bought ⇄ pending (un-check), grouped list wrapped in a `ScrollView`, manual items get a category picker + per-row delete. New `DELETE /api/shopping/items/:itemId` route (thin + Zod + `withAuth`) backed by `shoppingService.deleteItem`
 - [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 13 suites / 44 tests pass
+
+## Phase 13 — Recipe library (scrape → rewrite → pool-based plans)
+
+> Replace "AI invents recipes from scratch" with "AI selects from a curated pool of real
+> Polish recipes". Full plan + legal approach: `RECIPE_PIPELINE_PLAN.md`.
+
+- [x] 13a Schema extension (migration `0004_recipe_library`) — `recipes` gains `sourceUrl`, unique `contentHash`, `cuisine`, `tags`, `mealTypes`, `allergens` (new canonical `CanonicalAllergen` enum in `packages/shared`, enables SQL-level HARD-CONSTRAINT pre-filtering), `isGoodForLeftovers`
+- [x] 13b Scraper `scripts/scrape-recipes.ts` — fetch + parse only, no LLM/DB. Sitemap or category-listing URL discovery, robots.txt honored (Disallow + Crawl-delay, ≥1 req/2s), parse cascade JSON-LD → site-specific extractor → generic microdata, raw JSON dumped to gitignored `data/raw-recipes/{contentHash}.json` (idempotent re-runs skip cached hashes). Site configs: aniagotuje.pl (sitemap; HowToStep + legacy article-body markup) and kwestiasmaku.com (listing pages; Drupal-field extractor; browser-like UA because its WAF drops bot UAs; 10s crawl-delay)
+- [ ] 13c LLM rewrite/normalize `scripts/process-recipes.ts` — rewrite steps in own words, normalize ingredients, infer cuisine/tags/mealTypes/allergens, Zod-validate (allergens from canonical enum only), upsert by `contentHash`; seed ~300–500 obiady/kolacje
+- [ ] 13d Pool-based plan generation — `recipeService.findCandidates` with SQL allergen hard-filter, `WeeklyPlanFromPoolSchema` (AI picks recipeId per slot), ad-hoc generation fallback, behind `PLAN_FROM_POOL=1`
+- [ ] 13e Surface in app — `GET /api/recipes` (search + tag filter) backing the mobile "Przepisy" tab

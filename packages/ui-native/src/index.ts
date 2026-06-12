@@ -24,5 +24,8 @@ export type { TagProps } from './components/Tag';
 export { MealCard } from './components/MealCard';
 export type { MealCardProps, MealCardBadge } from './components/MealCard';
 
+export { RecipePlaceholder } from './components/RecipePlaceholder';
+export type { RecipePlaceholderProps } from './components/RecipePlaceholder';
+
 export { SectionHeader } from './components/SectionHeader';
 export type { SectionHeaderProps } from './components/SectionHeader';

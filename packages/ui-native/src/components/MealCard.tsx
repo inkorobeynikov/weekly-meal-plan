@@ -10,6 +10,7 @@ import {
 
 import { fontSize, radii, shadowStyle, tokens, type AccentTone } from '../tokens';
 import { Badge } from './Badge';
+import { RecipePlaceholder } from './RecipePlaceholder';
 import { Tag } from './Tag';
 
 export interface MealCardBadge {
@@ -20,6 +21,9 @@ export interface MealCardBadge {
 export interface MealCardProps {
   name: string;
   imageUri?: string;
+  /** Stable seed for the deterministic placeholder (recipe name or category).
+   *  Defaults to `name` when omitted so existing callers are unaffected. */
+  placeholderSeed?: string;
   cookTimeMinutes?: number;
   portions?: number;
   badges?: MealCardBadge[];
@@ -38,6 +42,7 @@ export interface MealCardProps {
 export function MealCard({
   name,
   imageUri,
+  placeholderSeed,
   cookTimeMinutes,
   portions,
   badges,
@@ -47,6 +52,8 @@ export function MealCard({
   testID,
   swapTestID,
 }: MealCardProps): React.JSX.Element {
+  const seed = placeholderSeed ?? name;
+
   const inner = (
     <>
       {imageUri ? (
@@ -56,7 +63,7 @@ export function MealCard({
           accessibilityIgnoresInvertColors
         />
       ) : (
-        <View style={[styles.photo, styles.photoPlaceholder]} />
+        <RecipePlaceholder seed={seed} height={140} style={styles.photo} />
       )}
 
       <View style={styles.body}>
@@ -129,9 +136,6 @@ const styles = StyleSheet.create({
   photo: {
     width: '100%',
     height: 140,
-  },
-  photoPlaceholder: {
-    backgroundColor: tokens.surface2,
   },
   body: {
     padding: 14,
