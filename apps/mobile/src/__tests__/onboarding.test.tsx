@@ -3,6 +3,8 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type {
   FamilyResponse,
   FamilyPreferences,
+  Household,
+  UpdateHouseholdInput,
   UpdatePreferencesInput,
 } from '../lib/api';
 
@@ -16,10 +18,13 @@ jest.mock('expo-router', () => ({
 const mockGetHousehold: jest.Mock<Promise<FamilyResponse>, []> = jest.fn();
 const mockUpdatePreferences: jest.Mock<Promise<FamilyPreferences>, [UpdatePreferencesInput]> =
   jest.fn();
+const mockUpdateHousehold: jest.Mock<Promise<Household>, [UpdateHouseholdInput]> = jest.fn();
 jest.mock('../lib/api', () => ({
   getHousehold: (): Promise<FamilyResponse> => mockGetHousehold(),
   updatePreferences: (data: UpdatePreferencesInput): Promise<FamilyPreferences> =>
     mockUpdatePreferences(data),
+  updateHousehold: (data: UpdateHouseholdInput): Promise<Household> =>
+    mockUpdateHousehold(data),
 }));
 
 const mockSetOnboardingComplete: jest.Mock<Promise<void>, []> = jest.fn();
@@ -73,6 +78,8 @@ const family: FamilyResponse = {
     locale: 'pl-PL',
     country: 'PL',
     timezone: 'Europe/Warsaw',
+    memberCount: null,
+    onboardingCompletedAt: null,
     telegramChatId: null,
     createdAt: '2026-01-01T00:00:00.000Z',
   },
@@ -84,6 +91,7 @@ beforeEach(() => {
   mockReplace.mockReset();
   mockGetHousehold.mockReset().mockResolvedValue(family);
   mockUpdatePreferences.mockReset().mockResolvedValue(emptyPrefs);
+  mockUpdateHousehold.mockReset().mockResolvedValue(family.household);
   mockSetOnboardingComplete.mockReset().mockResolvedValue(undefined);
 });
 
@@ -93,7 +101,7 @@ describe('Onboarding (W06)', () => {
   it('renders step 1 name question and advances to step 2 on "Dalej"', async () => {
     const { getByText, queryByText } = render(<Onboarding />);
 
-    await waitFor(() => expect(getByText('Jak masz na imię?')).toBeTruthy());
+    await waitFor(() => expect(getByText('Jak nazwiemy Twoją rodzinę?')).toBeTruthy());
     expect(queryByText('Ile osób w rodzinie?')).toBeNull();
 
     fireEvent.press(getByText('Dalej'));
@@ -104,7 +112,7 @@ describe('Onboarding (W06)', () => {
   it('toggles an allergy chip on and off', async () => {
     const { getByText, getByLabelText } = render(<Onboarding />);
 
-    await waitFor(() => expect(getByText('Jak masz na imię?')).toBeTruthy());
+    await waitFor(() => expect(getByText('Jak nazwiemy Twoją rodzinę?')).toBeTruthy());
     // Skip straight to step 3.
     fireEvent.press(getByText('Pomiń'));
     expect(getByText('Czy ktoś ma alergie?')).toBeTruthy();
@@ -122,7 +130,7 @@ describe('Onboarding (W06)', () => {
   it('"Zakończ" persists selected constraints and marks onboarding complete', async () => {
     const { getByText, getByLabelText } = render(<Onboarding />);
 
-    await waitFor(() => expect(getByText('Jak masz na imię?')).toBeTruthy());
+    await waitFor(() => expect(getByText('Jak nazwiemy Twoją rodzinę?')).toBeTruthy());
     fireEvent.press(getByText('Pomiń'));
 
     fireEvent.press(getByLabelText('Gluten'));
@@ -137,7 +145,31 @@ describe('Onboarding (W06)', () => {
     expect(arg?.allergies).toEqual(['Gluten', 'Laktoza']);
     expect(arg?.hardRestrictions).toEqual(['Wegetariańskie']);
 
+    // Household-level data (member count) + the server-side onboarding-complete
+    // marker are persisted too.
+    await waitFor(() => expect(mockUpdateHousehold).toHaveBeenCalledTimes(1));
+    const hArg = mockUpdateHousehold.mock.calls[0]?.[0];
+    expect(hArg?.onboardingComplete).toBe(true);
+    expect(hArg?.memberCount).toBe(4);
+
     await waitFor(() => expect(mockSetOnboardingComplete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)/plan'));
+  });
+
+  it('blocks navigation and surfaces an error when saving fails', async () => {
+    mockUpdateHousehold.mockRejectedValueOnce(new Error('network'));
+    const { getByText, queryByText } = render(<Onboarding />);
+
+    await waitFor(() => expect(getByText('Jak nazwiemy Twoją rodzinę?')).toBeTruthy());
+    fireEvent.press(getByText('Pomiń'));
+    fireEvent.press(getByText('Zakończ'));
+
+    await waitFor(() =>
+      expect(
+        queryByText('Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.'),
+      ).toBeTruthy(),
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockSetOnboardingComplete).not.toHaveBeenCalled();
   });
 });

@@ -22,7 +22,9 @@ import {
 
 import {
   getHousehold,
+  updateHousehold,
   updatePreferences,
+  type UpdateHouseholdInput,
   type UpdatePreferencesInput,
 } from '../../src/lib/api';
 import { setOnboardingComplete } from '../../src/lib/onboarding';
@@ -183,26 +185,40 @@ export default function Onboarding(): React.JSX.Element {
     try {
       // HARD CONSTRAINTS: pass the selected allergies/hardRestrictions through
       // verbatim. Only fields supported by UpdatePreferencesInput are sent.
-      const payload: UpdatePreferencesInput = {
+      const prefsPayload: UpdatePreferencesInput = {
         allergies: state.allergies,
         hardRestrictions: state.hardRestrictions,
       };
-      await updatePreferences(payload);
-      // TODO: backend route — api.ts exposes no household-update wrapper, so
-      // householdName/memberCount cannot be persisted yet. Skipping for now.
+      // Persist the household-level facts collected in steps 1–2 and stamp the
+      // server-side onboarding-complete marker so a reinstall skips onboarding.
+      const householdPayload: UpdateHouseholdInput = {
+        ...(state.householdName.trim().length > 0
+          ? { name: state.householdName.trim() }
+          : {}),
+        memberCount: state.memberCount,
+        onboardingComplete: true,
+      };
+      await Promise.all([
+        updatePreferences(prefsPayload),
+        updateHousehold(householdPayload),
+      ]);
     } catch {
-      // Surface a friendly error but still let the user proceed: onboarding is
-      // a local gate and preferences can be re-edited later in W05.
-      setError('Nie udało się zapisać preferencji. Możesz to poprawić później.');
+      // Saving failed: block navigation and let the user retry. Keeping them on
+      // this screen means the error message stays visible (previously the
+      // immediate router.replace unmounted the screen before it could be seen).
+      setError('Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.');
+      setSubmitting(false);
+      return;
     }
     try {
       await setOnboardingComplete();
     } catch {
-      // Even if the flag write fails we proceed; worst case is re-onboarding.
+      // Even if the local flag write fails we proceed; the server marker already
+      // recorded completion, so worst case is one extra server check next launch.
     }
     setSubmitting(false);
     router.replace('/(tabs)/plan');
-  }, [state.allergies, state.hardRestrictions]);
+  }, [state.allergies, state.hardRestrictions, state.householdName, state.memberCount]);
 
   if (loading) {
     return (
@@ -224,7 +240,7 @@ export default function Onboarding(): React.JSX.Element {
 
         {state.step === 1 ? (
           <View>
-            <Text style={styles.title}>Jak masz na imię?</Text>
+            <Text style={styles.title}>Jak nazwiemy Twoją rodzinę?</Text>
             <Text style={styles.subtitle}>
               Nadaj nazwę swojej rodzinie — będziemy jej używać w planie posiłków.
             </Text>
@@ -317,6 +333,15 @@ export default function Onboarding(): React.JSX.Element {
             <Button testID="onboarding-next" onPress={() => goTo(3)} style={styles.cta}>
               Dalej
             </Button>
+            <Pressable
+              testID="onboarding-skip"
+              onPress={() => goTo(3)}
+              accessibilityRole="button"
+              accessibilityLabel="Pomiń"
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>Pomiń</Text>
+            </Pressable>
             <Pressable
               onPress={() => goTo(1)}
               accessibilityRole="button"

@@ -109,6 +109,15 @@
 - [x] W03 shopping housekeeping: checkbox now toggles bought ⇄ pending (un-check), grouped list wrapped in a `ScrollView`, manual items get a category picker + per-row delete. New `DELETE /api/shopping/items/:itemId` route (thin + Zod + `withAuth`) backed by `shoppingService.deleteItem`
 - [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 13 suites / 44 tests pass
 
+## F2 — Onboarding persistence + family member CRUD ✅ done
+
+- [x] Persist onboarding household data — `households.member_count` + `households.onboarding_completed_at` columns (migration `0005_fresh_landau.sql`); `householdService.completeOnboarding()` saves name + stated family size and stamps the completion marker. Onboarding `finish()` now calls `updateHousehold` (PATCH `/api/family`) alongside `updatePreferences`
+- [x] Onboarding cosmetics — step-1 title fixed to "Jak nazwiemy Twoją rodzinę?" (matches the Nazwa rodziny field); added a consistent "Pomiń" on step 2; replaced the dead error UI (error then immediate `router.replace`) with navigation that is BLOCKED on save error so the message stays visible and the user can retry
+- [x] Family members CRUD — POST `/api/family/members` (create), PATCH + DELETE `/api/family/members/:memberId` (edit / remove / change `mealsAtHome`), all thin + Zod + `withAuth` and scoped to the authenticated household. W05 add creates server-first (no vanishing optimistic row); remove + "eats at home" toggles are optimistic with rollback; all failures surfaced to the user instead of silent rollback. Domain: `addMember` / `updateMember` / `removeMember` in `packages/domain`
+- [x] W05 shows custom (free-text) restrictions added during onboarding as removable chips (previously only the 4 canonical chips rendered) — HARD CONSTRAINT shown verbatim, never dropped
+- [x] Server-side onboarding-complete flag — `isOnboardingComplete()` now falls back to `households.onboardingCompletedAt` when the on-device flag is missing (e.g. reinstall) and back-fills the local cache, so returning users skip onboarding from server state
+- [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 48 tests pass (13 suites)
+
 ## Phase 13 — Recipe library (scrape → rewrite → pool-based plans)
 
 > Replace "AI invents recipes from scratch" with "AI selects from a curated pool of real

@@ -75,6 +75,14 @@ export const households = pgTable('households', {
   locale: text('locale').notNull().default('pl'),
   country: text('country').notNull().default('PL'),
   timezone: text('timezone').notNull().default('Europe/Warsaw'),
+  // Family size stated during W06 onboarding step 2. A household-level fact
+  // distinct from the named `household_members` rows (which may be added later
+  // and individually). Nullable until onboarding records it.
+  memberCount: integer('member_count'),
+  // Set when the W06 onboarding wizard is finished. Lets returning users (e.g.
+  // after a reinstall, when the on-device flag is gone) skip onboarding based on
+  // server state instead of local SecureStore only.
+  onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
   telegramChatId: text('telegram_chat_id').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
