@@ -14,6 +14,9 @@ export interface PoolCandidate {
   costLevel: string
   isGoodForLeftovers: boolean
   mainIngredients: string[]
+  // Phase 13 PR-4: the family explicitly asked for this dish via "Dodaj do
+  // następnego planu". Must be included unless it breaks a HARD CONSTRAINT.
+  requested?: boolean
 }
 
 export function buildPoolSystemPrompt(): string {
@@ -40,6 +43,12 @@ export function buildPoolSystemPrompt(): string {
     '  candidate\'s title or ingredients clearly conflict with a listed allergy or hard restriction,',
     '  DO NOT select it.',
     '',
+    'REQUESTED DISHES (must-offer)',
+    '- Candidates prefixed with [PROŚBA RODZINY] were specifically requested by the family.',
+    '  You MUST place each requested dish into the plan (in a slot that fits its mealType and the',
+    '  weekday time budget) UNLESS doing so would violate a HARD CONSTRAINT — allergies and hard',
+    '  restrictions always win over a request. Never break an allergy to honor a request.',
+    '',
     'SELECTION GUIDELINES',
     '- TIME: on weekdays (see the Day map) the SUM of lunch timeMinutes + dinner timeMinutes for a',
     '  day must stay at or below the family\'s weekday cooking limit. A lunch_leftover counts as 0',
@@ -58,8 +67,9 @@ export function formatCandidateList(candidates: PoolCandidate[]): string {
   const lines = candidates.map((c) => {
     const tags = c.tags.length ? c.tags.join(', ') : '-'
     const ingredients = c.mainIngredients.length ? c.mainIngredients.join(', ') : '-'
+    const prefix = c.requested ? '[PROŚBA RODZINY] ' : ''
     return (
-      `- recipeId: ${c.id} | ${c.title} | kuchnia: ${c.cuisine ?? '-'} | ${c.timeMinutes} min | ` +
+      `- ${prefix}recipeId: ${c.id} | ${c.title} | kuchnia: ${c.cuisine ?? '-'} | ${c.timeMinutes} min | ` +
       `koszt: ${c.costLevel} | pasuje na: ${c.mealTypes.join(', ')} | ` +
       `leftovers: ${c.isGoodForLeftovers ? 'yes' : 'no'} | tagi: ${tags} | składniki: ${ingredients}`
     )
@@ -72,7 +82,8 @@ export function buildPoolSelectionPrompt(candidates: PoolCandidate[]): string {
     formatCandidateList(candidates),
     '',
     'Compose the full plan now from these candidates only. Remember: two meals per day,',
-    'weekday time budget, allergies and hard restrictions are absolute.',
+    'weekday time budget, allergies and hard restrictions are absolute. Any candidate marked',
+    '[PROŚBA RODZINY] must appear in the plan unless it would break a HARD CONSTRAINT.',
   ].join('\n')
 }
 

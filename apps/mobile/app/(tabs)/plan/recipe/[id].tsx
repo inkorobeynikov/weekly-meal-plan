@@ -23,6 +23,8 @@ import {
   getHousehold,
   getRecipe,
   markMealCooked,
+  requestRecipeForNextPlan,
+  setRecipeFavorite,
   type Recipe,
 } from '@/lib/api';
 import { recipeAllergens, mealViolatesAllergies } from '@/lib/allergies';
@@ -73,6 +75,12 @@ export default function RecipeDetailScreen(): React.JSX.Element {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [tab, setTab] = useState<Tab>('ingredients');
   const [swapOpen, setSwapOpen] = useState(false);
+  // PR-4 cookbook actions — favorite heart + "add to next plan" request. Both
+  // work with or without plan context (the recipe library reaches W02 too).
+  const [favorite, setFavorite] = useState(false);
+  const [favoritePending, setFavoritePending] = useState(false);
+  const [requested, setRequested] = useState(false);
+  const [requestPending, setRequestPending] = useState(false);
   // F4 "mark cooked": local cooked flag + in-flight guard. Requires plan context
   // (planId) — the button is hidden otherwise.
   const [cooked, setCooked] = useState(false);
@@ -97,18 +105,51 @@ export default function RecipeDetailScreen(): React.JSX.Element {
   const load = useCallback(async (): Promise<void> => {
     setState({ kind: 'loading' });
     try {
-      const [recipe, family] = await Promise.all([
+      const [ctx, family] = await Promise.all([
         getRecipe(recipeId),
         getHousehold(),
       ]);
       const householdAllergies = family.preferences?.allergies ?? [];
-      setState({ kind: 'ready', recipe, householdAllergies });
+      setFavorite(ctx.isFavorite);
+      setRequested(ctx.isRequested);
+      setState({ kind: 'ready', recipe: ctx.recipe, householdAllergies });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Nie udało się wczytać przepisu.';
       setState({ kind: 'error', message });
     }
   }, [recipeId]);
+
+  // Optimistic favorite toggle — reverts on failure so the heart reflects the
+  // server truth. Idempotent server-side (one favorite row per household+recipe).
+  const onToggleFavorite = useCallback(async (): Promise<void> => {
+    if (state.kind !== 'ready' || favoritePending) return;
+    const next = !favorite;
+    setFavoritePending(true);
+    setFavorite(next);
+    try {
+      await setRecipeFavorite(state.recipe.id, next);
+    } catch {
+      setFavorite(!next);
+    } finally {
+      setFavoritePending(false);
+    }
+  }, [state, favorite, favoritePending]);
+
+  // Queue this dish for the next generated plan. Idempotent — once requested it
+  // stays requested until a plan fulfills it.
+  const onAddToPlan = useCallback(async (): Promise<void> => {
+    if (state.kind !== 'ready' || requestPending || requested) return;
+    setRequestPending(true);
+    try {
+      await requestRecipeForNextPlan(state.recipe.id);
+      setRequested(true);
+    } catch {
+      // Leave it un-requested so the user can retry.
+    } finally {
+      setRequestPending(false);
+    }
+  }, [state, requested, requestPending]);
 
   useEffect(() => {
     void load();
@@ -196,7 +237,25 @@ export default function RecipeDetailScreen(): React.JSX.Element {
         )}
 
         <View style={styles.content}>
-          <Text style={styles.title}>{recipe.title}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{recipe.title}</Text>
+            <Pressable
+              testID="recipe-favorite"
+              onPress={() => void onToggleFavorite()}
+              disabled={favoritePending}
+              accessibilityRole="button"
+              accessibilityLabel={favorite ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}
+              accessibilityState={{ selected: favorite }}
+              hitSlop={10}
+              style={styles.heart}
+            >
+              <Ionicons
+                name={favorite ? 'heart' : 'heart-outline'}
+                size={26}
+                color={favorite ? tokens.terraInk : tokens.muted}
+              />
+            </Pressable>
+          </View>
 
           <View style={styles.metaRow}>
             <Tag label={`${recipe.timeMinutes} min`} />
@@ -229,6 +288,19 @@ export default function RecipeDetailScreen(): React.JSX.Element {
               </Text>
             </View>
           )}
+
+          {/* PR-4: queue this dish for the next generated plan. Available with
+              or without plan context (reached from the cookbook too). */}
+          <Button
+            variant={requested ? 'secondary' : 'primary'}
+            loading={requestPending}
+            disabled={requested}
+            onPress={() => void onAddToPlan()}
+            accessibilityLabel="Dodaj do następnego planu"
+            testID="recipe-add-to-plan"
+          >
+            {requested ? 'Dodano do następnego planu ✓' : 'Dodaj do następnego planu'}
+          </Button>
 
           {/* Segmented tabs — real Pressables for a proper hit-area + press feedback */}
           <View style={styles.tabBar}>
@@ -477,10 +549,25 @@ const styles = StyleSheet.create({
     padding: spacing['2xl'],
     gap: spacing.lg,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   title: {
+    flex: 1,
     fontSize: fontSize.xl,
     fontWeight: '700',
     color: tokens.ink,
+  },
+  heart: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: tokens.surface2,
   },
   metaRow: {
     flexDirection: 'row',

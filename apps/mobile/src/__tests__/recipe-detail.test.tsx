@@ -1,6 +1,6 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
-import type { FamilyResponse, Recipe } from '../lib/api';
+import type { FamilyResponse, Recipe, RecipeWithContext } from '../lib/api';
 
 // --- mocks -------------------------------------------------------------------
 
@@ -9,16 +9,32 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: (): Record<string, string> => mockRouteParams,
 }));
 
-const mockGetRecipe: jest.Mock<Promise<Recipe>, [string]> = jest.fn();
+const mockGetRecipe: jest.Mock<Promise<RecipeWithContext>, [string]> = jest.fn();
 const mockGetHousehold: jest.Mock<Promise<FamilyResponse>, []> = jest.fn();
 const mockMarkMealCooked: jest.Mock<Promise<{ updated: number }>, [string, string, boolean]> =
   jest.fn();
+const mockSetRecipeFavorite: jest.Mock<Promise<{ isFavorite: boolean }>, [string, boolean]> =
+  jest.fn();
+const mockRequestRecipeForNextPlan: jest.Mock<Promise<{ requested: boolean }>, [string]> =
+  jest.fn();
 jest.mock('../lib/api', () => ({
-  getRecipe: (id: string): Promise<Recipe> => mockGetRecipe(id),
+  getRecipe: (id: string): Promise<RecipeWithContext> => mockGetRecipe(id),
   getHousehold: (): Promise<FamilyResponse> => mockGetHousehold(),
   markMealCooked: (planId: string, recipeId: string, cooked: boolean): Promise<{ updated: number }> =>
     mockMarkMealCooked(planId, recipeId, cooked),
+  setRecipeFavorite: (recipeId: string, favorite: boolean): Promise<{ isFavorite: boolean }> =>
+    mockSetRecipeFavorite(recipeId, favorite),
+  requestRecipeForNextPlan: (recipeId: string): Promise<{ requested: boolean }> =>
+    mockRequestRecipeForNextPlan(recipeId),
 }));
+
+// Wrap a Recipe in the GET /api/recipes/:id response shape (recipe + context).
+function ctx(
+  recipe: Recipe,
+  overrides: Partial<Omit<RecipeWithContext, 'recipe'>> = {},
+): RecipeWithContext {
+  return { recipe, isFavorite: false, isRequested: false, ...overrides };
+}
 
 // Mock the sibling swap sheet so this test does not depend on its impl.
 jest.mock('../components/RecipeSwapSheet', () => ({
@@ -97,12 +113,14 @@ beforeEach(() => {
   mockGetRecipe.mockReset();
   mockGetHousehold.mockReset();
   mockMarkMealCooked.mockReset().mockResolvedValue({ updated: 1 });
+  mockSetRecipeFavorite.mockReset().mockResolvedValue({ isFavorite: true });
+  mockRequestRecipeForNextPlan.mockReset().mockResolvedValue({ requested: true });
 });
 
 describe('W02 Recipe Detail', () => {
   it('shows the green "Bezpieczne" badge when there is no allergy conflict', async () => {
     // Recipe contains fish; household has NO allergies → safe.
-    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe()));
     mockGetHousehold.mockResolvedValue(makeFamily([]));
 
     const { getByText } = render(<RecipeDetailScreen />);
@@ -114,7 +132,7 @@ describe('W02 Recipe Detail', () => {
 
   it('shows a red allergy warning when a household allergen is present in the recipe', async () => {
     // Recipe contains "Łosoś"/fish; household is allergic to "Ryby" → conflict.
-    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe()));
     mockGetHousehold.mockResolvedValue(makeFamily(['Ryby']));
 
     const { getByText, queryByText } = render(<RecipeDetailScreen />);
@@ -129,7 +147,7 @@ describe('W02 Recipe Detail', () => {
   });
 
   it('switches between Składniki / Kroki / Zamienniki tabs', async () => {
-    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe()));
     mockGetHousehold.mockResolvedValue(makeFamily([]));
 
     const { getByText, queryByText } = render(<RecipeDetailScreen />);
@@ -154,10 +172,12 @@ describe('W02 Recipe Detail', () => {
   // carries those notes, and start collapsed (body hidden until tapped).
   it('renders collapsible storage / for-kids sections that expand on tap', async () => {
     mockGetRecipe.mockResolvedValue(
-      makeRecipe({
-        storageNotes: 'Przechowuj w lodówce do 2 dni.',
-        childFriendlyNotes: 'Podawaj bez ostrych przypraw.',
-      }),
+      ctx(
+        makeRecipe({
+          storageNotes: 'Przechowuj w lodówce do 2 dni.',
+          childFriendlyNotes: 'Podawaj bez ostrych przypraw.',
+        }),
+      ),
     );
     mockGetHousehold.mockResolvedValue(makeFamily([]));
 
@@ -175,7 +195,7 @@ describe('W02 Recipe Detail', () => {
   // calls markMealCooked and flips the label.
   it('marks the dish cooked when plan context is present', async () => {
     mockRouteParams = { id: 'r1', planId: 'plan-1', mealId: 'meal-1' };
-    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe()));
     mockGetHousehold.mockResolvedValue(makeFamily([]));
 
     const { getByTestId, getByText } = render(<RecipeDetailScreen />);
@@ -190,12 +210,64 @@ describe('W02 Recipe Detail', () => {
   });
 
   it('hides the "mark cooked" action without plan context', async () => {
-    mockGetRecipe.mockResolvedValue(makeRecipe());
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe()));
     mockGetHousehold.mockResolvedValue(makeFamily([]));
 
     const { queryByTestId, getByText } = render(<RecipeDetailScreen />);
 
     await waitFor(() => expect(getByText('Łosoś pieczony')).toBeTruthy());
     expect(queryByTestId('recipe-mark-cooked')).toBeNull();
+  });
+
+  // PR-4: the heart toggle is available without plan context (reached from the
+  // cookbook too) and persists the favorite via setRecipeFavorite.
+  it('toggles favorite from the recipe detail (no plan context required)', async () => {
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe(), { isFavorite: false }));
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { getByTestId } = render(<RecipeDetailScreen />);
+
+    await waitFor(() => expect(getByTestId('recipe-favorite')).toBeTruthy());
+    fireEvent.press(getByTestId('recipe-favorite'));
+
+    await waitFor(() => expect(mockSetRecipeFavorite).toHaveBeenCalledWith('r1', true));
+    // Selected accessibility state reflects the optimistic toggle.
+    await waitFor(() =>
+      expect(getByTestId('recipe-favorite').props.accessibilityState.selected).toBe(true),
+    );
+  });
+
+  // PR-4: "Dodaj do następnego planu" queues the dish and then shows the
+  // already-requested state.
+  it('queues the dish for the next plan and reflects the requested state', async () => {
+    mockGetRecipe.mockResolvedValue(ctx(makeRecipe(), { isRequested: false }));
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { getByTestId, getByText } = render(<RecipeDetailScreen />);
+
+    await waitFor(() => expect(getByTestId('recipe-add-to-plan')).toBeTruthy());
+    fireEvent.press(getByTestId('recipe-add-to-plan'));
+
+    await waitFor(() =>
+      expect(mockRequestRecipeForNextPlan).toHaveBeenCalledWith('r1'),
+    );
+    await waitFor(() =>
+      expect(getByText('Dodano do następnego planu ✓')).toBeTruthy(),
+    );
+  });
+
+  // PR-4: a recipe already favorited / requested renders in that state on load.
+  it('initialises favorite + requested state from the API response', async () => {
+    mockGetRecipe.mockResolvedValue(
+      ctx(makeRecipe(), { isFavorite: true, isRequested: true }),
+    );
+    mockGetHousehold.mockResolvedValue(makeFamily([]));
+
+    const { getByTestId, getByText } = render(<RecipeDetailScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('recipe-favorite').props.accessibilityState.selected).toBe(true),
+    );
+    expect(getByText('Dodano do następnego planu ✓')).toBeTruthy();
   });
 });

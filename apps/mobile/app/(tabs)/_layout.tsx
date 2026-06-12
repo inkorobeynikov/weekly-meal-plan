@@ -53,12 +53,12 @@ export default function TabsLayout(): React.JSX.Element | null {
           ),
         }}
       />
-      {/* Recipes tab hidden until Phase 3 populates the list/search. */}
+      {/* Przepisy = the family cookbook (Phase 13 PR-4). Recipes the household
+          has interacted with, not the full imported pool. */}
       <Tabs.Screen
         name="recipes"
         options={{
           title: 'Przepisy',
-          href: null,
           tabBarIcon: ({ color, focused, size }) => (
             <Ionicons
               name={focused ? 'restaurant' : 'restaurant-outline'}
