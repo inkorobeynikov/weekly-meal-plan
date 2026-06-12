@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./promo": "./src/services/promo.service.ts"
+    "./promo": "./src/services/promo.service.ts",
+    "./recipe-import": "./src/services/recipe-import.service.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
