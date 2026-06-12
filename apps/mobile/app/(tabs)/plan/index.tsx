@@ -26,12 +26,16 @@ import type { MealType } from '@meal-planner/shared';
 
 import {
   ApiError,
-  generatePlan,
   getWeeklyPlan,
   resetPlan,
   type MealWithRecipe,
   type PlanWithMealsAndRecipes,
 } from '@/lib/api';
+import { usePlanGeneration } from '@/lib/usePlanGeneration';
+import {
+  RecipeSwapSheet,
+  type SwapMealRef,
+} from '@/components/RecipeSwapSheet';
 
 // Dev-only affordances (e.g. the plan reset button) — hidden in production builds.
 const IS_DEV = process.env.NODE_ENV !== 'production';
@@ -140,15 +144,16 @@ export default function PlanScreen(): React.JSX.Element {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-  // Stays true from the moment generation is requested until a plan appears, so
-  // the UI shows a persistent "generating" state (the POST itself returns fast —
-  // it only enqueues the background job).
-  const [generationStarted, setGenerationStarted] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  // The id of the plan currently shown — used so generation can detect when a
+  // genuinely NEW plan (different id) has been produced by the background job.
+  const currentPlanIdRef = useRef<string | null>(null);
   // Set when the user just triggered generation, so we can jump straight to the
   // review screen the moment the freshly generated draft arrives.
   const pendingReviewRef = useRef(false);
+
+  // Swap sheet wiring — lets the user swap a meal straight from a day card.
+  const [swapMeal, setSwapMeal] = useState<SwapMealRef | null>(null);
+  const [swapVisible, setSwapVisible] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -157,21 +162,15 @@ export default function PlanScreen(): React.JSX.Element {
       // A 404 from the backend means there is no plan yet.
       if (plan.meals.length === 0) {
         setState({ kind: 'empty' });
+        currentPlanIdRef.current = null;
         return;
       }
       setState({ kind: 'ready', plan });
-      // A plan arrived — clear the generating banner/state.
-      setGenerationStarted(false);
-      setNotice(null);
-      // If this plan is the one we just generated, open the review screen so the
-      // user can check & approve it (rather than landing on the day view).
-      if (pendingReviewRef.current && plan.plan.status === 'draft') {
-        pendingReviewRef.current = false;
-        router.push('/(tabs)/plan/review');
-      }
+      currentPlanIdRef.current = plan.plan.id;
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setState({ kind: 'empty' });
+        currentPlanIdRef.current = null;
         return;
       }
       const message =
@@ -179,6 +178,24 @@ export default function PlanScreen(): React.JSX.Element {
       setState({ kind: 'error', message });
     }
   }, []);
+
+  // Shared generate + poll pattern (F1). Considers a plan "ready" only when it
+  // has meals AND is not the plan we already had loaded (a brand-new id),
+  // so regenerating never returns the stale plan.
+  const generation = usePlanGeneration({
+    isReady: (plan) =>
+      plan.meals.length > 0 && plan.plan.id !== currentPlanIdRef.current,
+    onReady: (plan) => {
+      setState({ kind: 'ready', plan });
+      currentPlanIdRef.current = plan.plan.id;
+      // If the freshly generated plan is a draft, jump to review so the user can
+      // check & approve it.
+      if (pendingReviewRef.current && plan.plan.status === 'draft') {
+        pendingReviewRef.current = false;
+        router.push('/(tabs)/plan/review');
+      }
+    },
+  });
 
   useEffect(() => {
     void load();
@@ -191,32 +208,10 @@ export default function PlanScreen(): React.JSX.Element {
   }, [load]);
 
   const onGenerate = useCallback(async (): Promise<void> => {
-    setGenerating(true);
-    setNotice(null);
-    try {
-      await generatePlan();
-      // The job is now queued; keep a persistent generating state until the
-      // finished plan is picked up by the poll/refresh below, then jump to review.
-      pendingReviewRef.current = true;
-      setGenerationStarted(true);
-    } catch (err) {
-      setNotice(
-        err instanceof Error ? err.message : 'Nie udało się rozpocząć generowania.',
-      );
-    } finally {
-      setGenerating(false);
-    }
-  }, []);
-
-  // While a generation is in flight and no plan has arrived yet, poll for it so
-  // the screen flips to the plan automatically once the background job finishes.
-  useEffect(() => {
-    if (!generationStarted || state.kind === 'ready') return;
-    const id = setInterval(() => {
-      void load();
-    }, 8000);
-    return () => clearInterval(id);
-  }, [generationStarted, state.kind, load]);
+    pendingReviewRef.current = true;
+    generation.reset();
+    await generation.start();
+  }, [generation]);
 
   // Week cells derived from the loaded plan; today computed in app code.
   const weekCells = useMemo<DayCell[]>(() => {
@@ -240,11 +235,41 @@ export default function PlanScreen(): React.JSX.Element {
     return mealsForDay(state.plan.meals, activeIso);
   }, [state, activeIso]);
 
+  // Human label for the active day (e.g. "Śr 3"), used by the swap sheet.
+  const activeDayLabel = useMemo<string>(() => {
+    const cell = weekCells.find((c) => c.isoDate === activeIso);
+    return cell ? `${cell.weekday} ${cell.dayNumber}` : '';
+  }, [weekCells, activeIso]);
+
   const openRecipe = useCallback((recipeId: string): void => {
     router.push({
       pathname: '/(tabs)/plan/recipe/[id]',
       params: { id: recipeId },
     });
+  }, []);
+
+  const openSwap = useCallback(
+    (planId: string, m: MealWithRecipe, dayLabel: string): void => {
+      setSwapMeal({
+        planId,
+        mealId: m.meal.id,
+        name: m.recipe.title,
+        dayLabel,
+        mealTypeLabel: MEAL_TYPE_LABELS[m.meal.mealType],
+      });
+      setSwapVisible(true);
+    },
+    [],
+  );
+
+  const handleSwapped = useCallback((): void => {
+    setSwapVisible(false);
+    setSwapMeal(null);
+    void load();
+  }, [load]);
+
+  const openFeedback = useCallback((planId: string): void => {
+    router.push({ pathname: '/feedback/[planId]', params: { planId } });
   }, []);
 
   // Dev/testing: wipe the household's plan so generation can be re-run from scratch.
@@ -254,12 +279,12 @@ export default function PlanScreen(): React.JSX.Element {
     } catch {
       // Non-fatal in dev — fall through to reload either way.
     }
-    setGenerationStarted(false);
-    setNotice(null);
+    generation.reset();
     setSelectedIso(null);
+    currentPlanIdRef.current = null;
     setState({ kind: 'loading' });
     await load();
-  }, [load]);
+  }, [load, generation]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -276,12 +301,12 @@ export default function PlanScreen(): React.JSX.Element {
       ) : state.kind === 'error' ? (
         <ErrorState message={state.message} onRetry={() => void load()} />
       ) : state.kind === 'empty' ? (
-        generationStarted ? (
+        generation.phase === 'generating' ? (
           <GeneratingState />
         ) : (
           <EmptyState
-            errorNotice={notice}
-            generating={generating}
+            errorNotice={generation.error}
+            generating={generation.generating}
             onGenerate={() => void onGenerate()}
           />
         )
@@ -345,13 +370,24 @@ export default function PlanScreen(): React.JSX.Element {
               })}
             </ScrollView>
 
-            {generationStarted ? (
+            {generation.phase === 'generating' ? (
               <View style={styles.banner}>
                 <ActivityIndicator size="small" color={tokens.sageInk} />
                 <Text style={styles.bannerText}>Generujemy nowy plan…</Text>
               </View>
-            ) : notice ? (
-              <Text style={styles.errorNotice}>{notice}</Text>
+            ) : generation.error ? (
+              <View style={styles.noticeRow}>
+                <Text style={styles.errorNotice}>{generation.error}</Text>
+                <Pressable
+                  testID="plan-generate-retry"
+                  onPress={() => void onGenerate()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Spróbuj ponownie"
+                  style={styles.retryLink}
+                >
+                  <Text style={styles.retryLinkText}>Spróbuj ponownie</Text>
+                </Pressable>
+              </View>
             ) : null}
 
             <View style={styles.meals}>
@@ -365,36 +401,68 @@ export default function PlanScreen(): React.JSX.Element {
                     </Text>
                     <MealCard
                       testID={`plan-meal-${meal.mealType}`}
+                      swapTestID={`plan-swap-${meal.mealType}`}
                       name={recipe.title}
+                      placeholderSeed={recipe.title}
                       cookTimeMinutes={recipe.timeMinutes}
                       portions={meal.servings}
                       onPress={() => openRecipe(recipe.id)}
+                      onSwap={() =>
+                        openSwap(
+                          state.plan.plan.id,
+                          { meal, recipe },
+                          activeDayLabel,
+                        )
+                      }
                     />
                   </View>
                 ))
               )}
             </View>
+
+            {/* End-of-week prompt → weekly feedback (W09). Always reachable for
+                an approved plan so the cook → rate loop can close. */}
+            {state.plan.plan.status === 'approved' ? (
+              <Pressable
+                testID="plan-feedback-cta"
+                onPress={() => openFeedback(state.plan.plan.id)}
+                accessibilityRole="button"
+                accessibilityLabel="Oceń miniony tydzień"
+                style={styles.feedbackCta}
+              >
+                <Ionicons name="star-outline" size={18} color={tokens.sageInk} />
+                <Text style={styles.feedbackCtaText}>Oceń miniony tydzień</Text>
+                <Ionicons name="chevron-forward" size={16} color={tokens.sageInk} />
+              </Pressable>
+            ) : null}
           </ScrollView>
 
           <Pressable
             testID="plan-fab"
             onPress={() => void onGenerate()}
-            disabled={generating || generationStarted}
+            disabled={generation.generating}
             accessibilityRole="button"
             accessibilityLabel="Wygeneruj nowy plan"
-            style={[styles.fab, (generating || generationStarted) && styles.fabDisabled]}
+            style={[styles.fab, generation.generating && styles.fabDisabled]}
           >
-            {generationStarted ? (
+            {generation.generating ? (
               <ActivityIndicator size="small" color={tokens.surface} />
             ) : (
               <Ionicons name="sparkles" size={18} color={tokens.surface} />
             )}
             <Text style={styles.fabLabel}>
-              {generationStarted ? 'Generowanie…' : 'Wygeneruj nowy plan'}
+              {generation.generating ? 'Generowanie…' : 'Wygeneruj nowy plan'}
             </Text>
           </Pressable>
         </>
       )}
+
+      <RecipeSwapSheet
+        visible={swapVisible}
+        meal={swapMeal}
+        onClose={() => setSwapVisible(false)}
+        onSwapped={handleSwapped}
+      />
     </SafeAreaView>
   );
 }
@@ -591,6 +659,39 @@ const styles = StyleSheet.create({
     color: tokens.terraInk,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  noticeRow: {
+    marginHorizontal: spacing['2xl'],
+    marginBottom: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  retryLink: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  retryLinkText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: tokens.sageInk,
+    textDecorationLine: 'underline',
+  },
+  feedbackCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing['2xl'],
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: tokens.sageSoft,
+  },
+  feedbackCtaText: {
+    flex: 1,
+    fontSize: fontSize.base,
+    fontWeight: '700',
+    color: tokens.sageInk,
   },
 
   meals: {

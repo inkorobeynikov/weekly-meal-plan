@@ -39,3 +39,15 @@ export const PATCH = withAuth<RouteContext>(async (req, { params }) => {
     return Response.json({ error: message }, { status: 404 })
   }
 })
+
+export const DELETE = withAuth<RouteContext>(async (_req, { params }) => {
+  const { itemId } = await params
+
+  try {
+    const deleted = await shoppingService.deleteItem(itemId)
+    return Response.json({ deleted })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Delete failed'
+    return Response.json({ error: message }, { status: 404 })
+  }
+})

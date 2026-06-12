@@ -7,7 +7,7 @@ import { render } from '@testing-library/react-native';
 // assert the tab set without the real navigator. Redirect is captured too. ---
 interface TabScreenProps {
   name: string;
-  options?: { title?: string };
+  options?: { title?: string; href?: string | null };
 }
 
 interface TabsComponent {
@@ -23,6 +23,8 @@ jest.mock('expo-router', () => {
     const labels: string[] = [];
     ReactLib.Children.forEach(children, (child) => {
       if (ReactLib.isValidElement<TabScreenProps>(child)) {
+        // Skip screens hidden via href: null (mirrors expo-router behaviour).
+        if (child.props.options?.href === null) return;
         const title = child.props.options?.title;
         if (typeof title === 'string') labels.push(title);
       }
@@ -72,10 +74,11 @@ void Text;
 import TabsLayout from '../../app/(tabs)/_layout';
 
 describe('tab navigation', () => {
-  it('renders the four tab labels', () => {
-    const { getByText } = render(<TabsLayout />);
+  it('renders the three visible tab labels (Przepisy is hidden)', () => {
+    const { getByText, queryByText } = render(<TabsLayout />);
     expect(getByText('Plan')).toBeTruthy();
-    expect(getByText('Przepisy')).toBeTruthy();
+    // Recipes tab is hidden (href: null) until Phase 3 populates it.
+    expect(queryByText('Przepisy')).toBeNull();
     expect(getByText('Zakupy')).toBeTruthy();
     expect(getByText('Rodzina')).toBeTruthy();
   });

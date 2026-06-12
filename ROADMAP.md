@@ -98,11 +98,33 @@
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
 
-## Phase 13 — Household backend gaps (onboarding + family CRUD) ✅ done
+## F1 — Weekly loop & async generation fixes ✅ done
 
-- [x] Persist onboarding household data — `households.member_count` + `households.onboarding_completed_at` columns (migration `0004_many_rhino.sql`); `householdService.completeOnboarding()` saves name + stated family size and stamps the completion marker. Onboarding `finish()` now calls `updateHousehold` (PATCH `/api/family`) alongside `updatePreferences`
+- [x] Shared async plan-generation pattern (`usePlanGeneration` hook): generate → poll `getWeeklyPlan` every 8s with a hard ceiling (~15 polls / ~2 min). On timeout it switches to an explicit error + "Spróbuj ponownie" action instead of polling forever. Reused across plan, review and shopping screens
+- [x] W04 "Wygeneruj nowy" now waits for a genuinely NEW draft (different plan id) via the poll pattern with a "Generuję nowy plan…" state — no longer returns the stale draft instantly
+- [x] W08 "Rozpocznij nowy tydzień" routes the user to weekly feedback (W09) for the finishing plan FIRST, then triggers generation via the poll pattern, surfacing any error (no silent catch)
+- [x] W09 feedback reachable in-app: end-of-week CTA on the approved plan screen + the new-week flow; `submitFeedback` guarded when `planId === null`; added a "Wróć do planu" button on the success state (was a dead-end)
+- [x] W04 post-approve confirmation ("Plan zatwierdzony! — lista zakupów się generuje") with a direct link to the Zakupy tab + "Wróć do planu"
+- [x] W01 day cards: swap affordance opens the existing `RecipeSwapSheet`; feedback entry point added
+- [x] W03 shopping housekeeping: checkbox now toggles bought ⇄ pending (un-check), grouped list wrapped in a `ScrollView`, manual items get a category picker + per-row delete. New `DELETE /api/shopping/items/:itemId` route (thin + Zod + `withAuth`) backed by `shoppingService.deleteItem`
+- [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 13 suites / 44 tests pass
+
+## F2 — Onboarding persistence + family member CRUD ✅ done
+
+- [x] Persist onboarding household data — `households.member_count` + `households.onboarding_completed_at` columns (migration `0005_fresh_landau.sql`); `householdService.completeOnboarding()` saves name + stated family size and stamps the completion marker. Onboarding `finish()` now calls `updateHousehold` (PATCH `/api/family`) alongside `updatePreferences`
 - [x] Onboarding cosmetics — step-1 title fixed to "Jak nazwiemy Twoją rodzinę?" (matches the Nazwa rodziny field); added a consistent "Pomiń" on step 2; replaced the dead error UI (error then immediate `router.replace`) with navigation that is BLOCKED on save error so the message stays visible and the user can retry
 - [x] Family members CRUD — POST `/api/family/members` (create), PATCH + DELETE `/api/family/members/:memberId` (edit / remove / change `mealsAtHome`), all thin + Zod + `withAuth` and scoped to the authenticated household. W05 add creates server-first (no vanishing optimistic row); remove + "eats at home" toggles are optimistic with rollback; all failures surfaced to the user instead of silent rollback. Domain: `addMember` / `updateMember` / `removeMember` in `packages/domain`
 - [x] W05 shows custom (free-text) restrictions added during onboarding as removable chips (previously only the 4 canonical chips rendered) — HARD CONSTRAINT shown verbatim, never dropped
 - [x] Server-side onboarding-complete flag — `isOnboardingComplete()` now falls back to `households.onboardingCompletedAt` when the on-device flag is missing (e.g. reinstall) and back-fills the local cache, so returning users skip onboarding from server state
 - [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 48 tests pass (13 suites)
+
+## Phase 13 — Recipe library (scrape → rewrite → pool-based plans)
+
+> Replace "AI invents recipes from scratch" with "AI selects from a curated pool of real
+> Polish recipes". Full plan + legal approach: `RECIPE_PIPELINE_PLAN.md`.
+
+- [x] 13a Schema extension (migration `0004_recipe_library`) — `recipes` gains `sourceUrl`, unique `contentHash`, `cuisine`, `tags`, `mealTypes`, `allergens` (new canonical `CanonicalAllergen` enum in `packages/shared`, enables SQL-level HARD-CONSTRAINT pre-filtering), `isGoodForLeftovers`
+- [x] 13b Scraper `scripts/scrape-recipes.ts` — fetch + parse only, no LLM/DB. Sitemap or category-listing URL discovery, robots.txt honored (Disallow + Crawl-delay, ≥1 req/2s), parse cascade JSON-LD → site-specific extractor → generic microdata, raw JSON dumped to gitignored `data/raw-recipes/{contentHash}.json` (idempotent re-runs skip cached hashes). Site configs: aniagotuje.pl (sitemap; HowToStep + legacy article-body markup) and kwestiasmaku.com (listing pages; Drupal-field extractor; browser-like UA because its WAF drops bot UAs; 10s crawl-delay)
+- [ ] 13c LLM rewrite/normalize `scripts/process-recipes.ts` — rewrite steps in own words, normalize ingredients, infer cuisine/tags/mealTypes/allergens, Zod-validate (allergens from canonical enum only), upsert by `contentHash`; seed ~300–500 obiady/kolacje
+- [ ] 13d Pool-based plan generation — `recipeService.findCandidates` with SQL allergen hard-filter, `WeeklyPlanFromPoolSchema` (AI picks recipeId per slot), ad-hoc generation fallback, behind `PLAN_FROM_POOL=1`
+- [ ] 13e Surface in app — `GET /api/recipes` (search + tag filter) backing the mobile "Przepisy" tab

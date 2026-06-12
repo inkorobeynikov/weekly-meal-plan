@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import {
   Button,
@@ -122,6 +122,13 @@ export default function FeedbackScreen(): React.JSX.Element {
   }, []);
 
   const submit = useCallback(async () => {
+    // Guard: never submit feedback without a plan to attach it to. A missing
+    // planId means the route was opened without a valid id — bail with a clear
+    // message rather than firing requests that would drop the weeklyPlanId.
+    if (planId === null) {
+      setSubmitError('Brak planu — nie można zapisać opinii.');
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -169,6 +176,14 @@ export default function FeedbackScreen(): React.JSX.Element {
         <View style={styles.emptyWrap}>
           <Ionicons name="checkmark-circle" size={56} color={tokens.sage} />
           <Text style={styles.emptyTitle}>Dzięki! Zapamiętam na przyszły tydzień 🙌</Text>
+          <Button
+            testID="feedback-back-to-plan"
+            onPress={() => router.replace('/(tabs)/plan')}
+            accessibilityLabel="Wróć do planu"
+            style={styles.cta}
+          >
+            Wróć do planu
+          </Button>
         </View>
       </SafeAreaView>
     );
