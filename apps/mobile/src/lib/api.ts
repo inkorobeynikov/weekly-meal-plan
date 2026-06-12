@@ -305,6 +305,32 @@ export interface DishFeedback {
   createdAt: string;
 }
 
+// Recipe + per-household context, returned by GET /api/recipes/:recipeId.
+export interface RecipeWithContext {
+  recipe: Recipe;
+  // PR-4: household has favorited this recipe (heart toggle state).
+  isFavorite: boolean;
+  // PR-4: household has an active "add to next plan" request for it.
+  isRequested: boolean;
+}
+
+// PR-4 family cookbook. One entry per recipe the household has interacted with.
+export interface CookbookEntry {
+  recipe: Recipe;
+  lastCookedAt: string | null;
+  timesPlanned: number;
+  reactions: FeedbackReaction[];
+  isFavorite: boolean;
+  isRequested: boolean;
+}
+
+// Shape returned by GET /api/recipes/family (recipeService.getFamilyCookbook).
+export interface FamilyCookbook {
+  favorites: CookbookEntry[];
+  recentlyCooked: CookbookEntry[];
+  all: CookbookEntry[];
+}
+
 // ---------------------------------------------------------------------------
 // Request payload types
 // ---------------------------------------------------------------------------
@@ -524,9 +550,40 @@ export function registerPushToken(
   });
 }
 
-// GET /api/recipes/:recipeId -> { recipe }.
-export function getRecipe(recipeId: string): Promise<Recipe> {
-  return apiFetch<{ recipe: Recipe }>(`/api/recipes/${recipeId}`).then((res) => res.recipe);
+// GET /api/recipes/:recipeId -> { recipe, isFavorite, isRequested }. The latter
+// two are per-household context for the W02 heart toggle + add-to-plan button.
+export function getRecipe(recipeId: string): Promise<RecipeWithContext> {
+  return apiFetch<RecipeWithContext>(`/api/recipes/${recipeId}`);
+}
+
+// GET /api/recipes/family -> the household's cookbook (PR-4). Recipes the family
+// has interacted with, grouped into favorites / recently-cooked / all.
+export function getFamilyCookbook(): Promise<FamilyCookbook> {
+  return apiFetch<{ cookbook: FamilyCookbook }>('/api/recipes/family').then(
+    (res) => res.cookbook,
+  );
+}
+
+// POST /api/recipes/:recipeId/favorite -> { isFavorite }. Idempotent heart toggle.
+export function setRecipeFavorite(
+  recipeId: string,
+  favorite: boolean,
+): Promise<{ isFavorite: boolean }> {
+  return apiFetch<{ isFavorite: boolean }>(`/api/recipes/${recipeId}/favorite`, {
+    method: 'POST',
+    body: { favorite },
+  });
+}
+
+// POST /api/recipes/:recipeId/request -> { requested: true }. Queues the recipe
+// for the next generated plan (subject to the allergen HARD CONSTRAINT).
+export function requestRecipeForNextPlan(
+  recipeId: string,
+): Promise<{ requested: boolean }> {
+  return apiFetch<{ requested: boolean }>(`/api/recipes/${recipeId}/request`, {
+    method: 'POST',
+    body: null,
+  });
 }
 
 // POST /api/feedback -> { feedback }. weeklyPlanId carried as planId argument.

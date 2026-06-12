@@ -1,9 +1,19 @@
-import { and, eq, gte, isNull, notInArray, sql } from 'drizzle-orm'
-import { db, recipes, dishFeedback, type Recipe } from '@meal-planner/db'
+import { and, desc, eq, gte, inArray, isNull, notInArray, sql } from 'drizzle-orm'
+import {
+  db,
+  recipes,
+  dishFeedback,
+  plannedMeals,
+  weeklyPlans,
+  recipeRequests,
+  type Recipe,
+  type RecipeRequest,
+} from '@meal-planner/db'
 import {
   matchCanonicalAllergens,
   type BudgetMode,
   type CanonicalAllergen,
+  type FeedbackReaction,
 } from '@meal-planner/shared'
 import type { PoolCandidate } from '@meal-planner/ai'
 import * as householdService from './household.service.js'
@@ -24,6 +34,14 @@ export interface FindCandidatesOptions {
   mealType?: 'dinner' | 'lunch'
   /** Recipes already on the plan (replaceMeal must not re-offer them). */
   excludeRecipeIds?: string[]
+  /**
+   * Phase 13 PR-4: recipes the family asked for via "Dodaj do następnego planu".
+   * They are force-included in the returned candidate list and flagged
+   * `requested: true` so the prompt insists on them — BUT only if they survive
+   * the same allergen HARD-CONSTRAINT SQL filter. The allergen filter is NEVER
+   * bypassed for a request.
+   */
+  mustOfferRecipeIds?: string[]
 }
 
 export interface RecipeCandidate extends PoolCandidate {
@@ -153,7 +171,47 @@ export async function findCandidates(
   scored.sort((a, b) => b.score - a.score)
   const limit = options.limit ?? DEFAULT_CANDIDATE_LIMIT
 
-  return scored.slice(0, limit).map(({ row }) => ({
+  // Phase 13 PR-4: force-include requested recipes that survive the allergen
+  // HARD-CONSTRAINT filter. They go FIRST and are flagged so the prompt insists
+  // on them; the allergen filter (forbiddenAllergens) is reapplied here so a
+  // request can never smuggle a forbidden recipe into the pool.
+  const requestedCandidates = await fetchMustOfferCandidates(
+    options.mustOfferRecipeIds ?? [],
+    forbiddenAllergens,
+  )
+
+  const out: RecipeCandidate[] = []
+  const seen = new Set<string>()
+  for (const candidate of requestedCandidates) {
+    out.push(candidate)
+    seen.add(candidate.id)
+  }
+  for (const { row } of scored) {
+    if (out.length >= limit) break
+    if (seen.has(row.id)) continue
+    out.push(rowToCandidate(row, false))
+    seen.add(row.id)
+  }
+  return out
+}
+
+// Row shape shared by the scored query and the must-offer query.
+interface CandidateRow {
+  id: string
+  title: string
+  cuisine: string | null
+  tags: string[]
+  mealTypes: string[]
+  timeMinutes: number
+  costLevel: string
+  servings: number
+  isGoodForLeftovers: boolean
+  allergens: CanonicalAllergen[]
+  ingredientsJson: { name: string }[]
+}
+
+function rowToCandidate(row: CandidateRow, requested: boolean): RecipeCandidate {
+  return {
     id: row.id,
     title: row.title,
     cuisine: row.cuisine,
@@ -167,5 +225,300 @@ export async function findCandidates(
     mainIngredients: row.ingredientsJson
       .slice(0, MAIN_INGREDIENTS_PER_CANDIDATE)
       .map((i) => i.name),
-  }))
+    requested,
+  }
+}
+
+// Fetch the requested pool recipes, reapplying the allergen HARD-CONSTRAINT
+// exclusion (and the global-pool/valid conditions). Anything that does not
+// survive is silently dropped — a request never overrides an allergy.
+async function fetchMustOfferCandidates(
+  recipeIds: string[],
+  forbiddenAllergens: CanonicalAllergen[],
+): Promise<RecipeCandidate[]> {
+  if (recipeIds.length === 0) return []
+  const conditions = [
+    inArray(recipes.id, [...new Set(recipeIds)]),
+    eq(recipes.source, 'imported'),
+    eq(recipes.validationStatus, 'valid'),
+    isNull(recipes.householdId),
+  ]
+  if (forbiddenAllergens.length > 0) {
+    // HARD CONSTRAINT: identical allergen exclusion as the main query.
+    conditions.push(
+      sql`NOT (${recipes.allergens} ?| ARRAY[${sql.join(
+        forbiddenAllergens.map((a) => sql`${a}`),
+        sql`, `,
+      )}]::text[])`,
+    )
+  }
+  const rows = await db
+    .select({
+      id: recipes.id,
+      title: recipes.title,
+      cuisine: recipes.cuisine,
+      tags: recipes.tags,
+      mealTypes: recipes.mealTypes,
+      timeMinutes: recipes.timeMinutes,
+      costLevel: recipes.costLevel,
+      servings: recipes.servings,
+      isGoodForLeftovers: recipes.isGoodForLeftovers,
+      allergens: recipes.allergens,
+      ingredientsJson: recipes.ingredientsJson,
+    })
+    .from(recipes)
+    .where(and(...conditions))
+  return rows.map((row) => rowToCandidate(row, true))
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13 PR-4 — Favorites (reuse the dishFeedback 'favorite' reaction).
+// ---------------------------------------------------------------------------
+
+/** True when the household has a 'favorite' reaction row for this recipe. */
+export async function isFavorite(householdId: string, recipeId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: dishFeedback.id })
+    .from(dishFeedback)
+    .where(
+      and(
+        eq(dishFeedback.householdId, householdId),
+        eq(dishFeedback.recipeId, recipeId),
+        eq(dishFeedback.reaction, 'favorite'),
+      ),
+    )
+    .limit(1)
+  return row !== undefined
+}
+
+/**
+ * Idempotent favorite toggle. `favorite: true` ensures exactly one 'favorite'
+ * row exists for (household, recipe); `favorite: false` removes every such row.
+ * Returns the resulting state.
+ */
+export async function setFavorite(
+  householdId: string,
+  recipeId: string,
+  favorite: boolean,
+): Promise<{ isFavorite: boolean }> {
+  if (!favorite) {
+    await db
+      .delete(dishFeedback)
+      .where(
+        and(
+          eq(dishFeedback.householdId, householdId),
+          eq(dishFeedback.recipeId, recipeId),
+          eq(dishFeedback.reaction, 'favorite'),
+        ),
+      )
+    return { isFavorite: false }
+  }
+  // Only insert when there is no existing favorite row (one row per pair).
+  const already = await isFavorite(householdId, recipeId)
+  if (!already) {
+    await db.insert(dishFeedback).values({
+      householdId,
+      recipeId,
+      reaction: 'favorite',
+    })
+  }
+  return { isFavorite: true }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13 PR-4 — "Dodaj do następnego planu" request queue.
+// ---------------------------------------------------------------------------
+
+/** Recipe ids the household has an active (un-consumed) request for. */
+export async function getActiveRequestRecipeIds(householdId: string): Promise<string[]> {
+  const rows = await db
+    .select({ recipeId: recipeRequests.recipeId })
+    .from(recipeRequests)
+    .where(
+      and(
+        eq(recipeRequests.householdId, householdId),
+        isNull(recipeRequests.consumedByPlanId),
+      ),
+    )
+  return [...new Set(rows.map((r) => r.recipeId))]
+}
+
+export async function isRecipeRequested(
+  householdId: string,
+  recipeId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: recipeRequests.id })
+    .from(recipeRequests)
+    .where(
+      and(
+        eq(recipeRequests.householdId, householdId),
+        eq(recipeRequests.recipeId, recipeId),
+        isNull(recipeRequests.consumedByPlanId),
+      ),
+    )
+    .limit(1)
+  return row !== undefined
+}
+
+/**
+ * Queue a recipe to be offered to the next generated plan. Idempotent: at most
+ * one active (un-consumed) request per (household, recipe).
+ */
+export async function requestRecipeForNextPlan(
+  householdId: string,
+  recipeId: string,
+): Promise<RecipeRequest> {
+  const [existing] = await db
+    .select()
+    .from(recipeRequests)
+    .where(
+      and(
+        eq(recipeRequests.householdId, householdId),
+        eq(recipeRequests.recipeId, recipeId),
+        isNull(recipeRequests.consumedByPlanId),
+      ),
+    )
+    .limit(1)
+  if (existing) return existing
+  const [row] = await db
+    .insert(recipeRequests)
+    .values({ householdId, recipeId })
+    .returning()
+  if (!row) throw new Error('Failed to queue recipe request')
+  return row
+}
+
+/**
+ * Mark the household's active requests for the given recipes as fulfilled by a
+ * plan. Called from plan generation once the requested dishes land in a plan.
+ */
+export async function markRequestsConsumed(
+  householdId: string,
+  recipeIds: string[],
+  planId: string,
+): Promise<{ consumed: number }> {
+  if (recipeIds.length === 0) return { consumed: 0 }
+  const rows = await db
+    .update(recipeRequests)
+    .set({ consumedByPlanId: planId })
+    .where(
+      and(
+        eq(recipeRequests.householdId, householdId),
+        isNull(recipeRequests.consumedByPlanId),
+        inArray(recipeRequests.recipeId, [...new Set(recipeIds)]),
+      ),
+    )
+    .returning({ id: recipeRequests.id })
+  return { consumed: rows.length }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13 PR-4 — Family cookbook. Deliberately NOT the full imported pool: we
+// surface only recipes this household has actually interacted with, via
+// planned_meals (incl. cooked_at marks) and dishFeedback.
+// ---------------------------------------------------------------------------
+
+export interface CookbookEntry {
+  recipe: Recipe
+  /** Latest cooked_at across this recipe's planned meals, ISO string or null. */
+  lastCookedAt: string | null
+  /** How many times this recipe has been planned for the household. */
+  timesPlanned: number
+  /** Distinct reactions the household gave this recipe (most-recent first). */
+  reactions: FeedbackReaction[]
+  isFavorite: boolean
+  isRequested: boolean
+}
+
+export interface FamilyCookbook {
+  /** "Ulubione" — recipes with a 'favorite' reaction. */
+  favorites: CookbookEntry[]
+  /** "Ostatnio gotowane" — recipes with a cooked_at mark, newest first. */
+  recentlyCooked: CookbookEntry[]
+  /** "Wszystkie wasze dania" — every interacted recipe. */
+  all: CookbookEntry[]
+}
+
+const RECENTLY_COOKED_LIMIT = 12
+
+export async function getFamilyCookbook(householdId: string): Promise<FamilyCookbook> {
+  // 1) Planned-meal aggregates (times planned + last cooked) per recipe.
+  const plannedRows = await db
+    .select({
+      recipeId: plannedMeals.recipeId,
+      timesPlanned: sql<number>`cast(count(*) as int)`,
+      lastCookedAt: sql<Date | null>`max(${plannedMeals.cookedAt})`,
+    })
+    .from(plannedMeals)
+    .innerJoin(weeklyPlans, eq(plannedMeals.weeklyPlanId, weeklyPlans.id))
+    .where(eq(weeklyPlans.householdId, householdId))
+    .groupBy(plannedMeals.recipeId)
+
+  // 2) Feedback reactions per recipe (most-recent first).
+  const feedbackRows = await db
+    .select({ recipeId: dishFeedback.recipeId, reaction: dishFeedback.reaction })
+    .from(dishFeedback)
+    .where(eq(dishFeedback.householdId, householdId))
+    .orderBy(desc(dishFeedback.createdAt))
+
+  // 3) Active requests for the isRequested flag.
+  const requestedIds = new Set(await getActiveRequestRecipeIds(householdId))
+
+  const planned = new Map(plannedRows.map((r) => [r.recipeId, r]))
+  const reactionsByRecipe = new Map<string, FeedbackReaction[]>()
+  for (const row of feedbackRows) {
+    const list = reactionsByRecipe.get(row.recipeId) ?? []
+    if (!list.includes(row.reaction)) list.push(row.reaction)
+    reactionsByRecipe.set(row.recipeId, list)
+  }
+
+  const recipeIds = [
+    ...new Set([...planned.keys(), ...reactionsByRecipe.keys()]),
+  ]
+  if (recipeIds.length === 0) {
+    return { favorites: [], recentlyCooked: [], all: [] }
+  }
+
+  const recipeRows = await db
+    .select()
+    .from(recipes)
+    .where(inArray(recipes.id, recipeIds))
+  const recipeById = new Map(recipeRows.map((r) => [r.id, r]))
+
+  const entries: CookbookEntry[] = []
+  for (const id of recipeIds) {
+    const recipe = recipeById.get(id)
+    if (!recipe) continue // recipe row gone (e.g. household recipe deleted)
+    const agg = planned.get(id)
+    const reactions = reactionsByRecipe.get(id) ?? []
+    const lastCooked = agg?.lastCookedAt ?? null
+    entries.push({
+      recipe,
+      lastCookedAt: lastCooked ? new Date(lastCooked).toISOString() : null,
+      timesPlanned: agg?.timesPlanned ?? 0,
+      reactions,
+      isFavorite: reactions.includes('favorite'),
+      isRequested: requestedIds.has(id),
+    })
+  }
+
+  // "Wszystkie wasze dania" — most-recently-cooked first, then most-planned,
+  // then alphabetical for a stable order.
+  const all = [...entries].sort((a, b) => {
+    if (a.lastCookedAt && b.lastCookedAt) {
+      return b.lastCookedAt.localeCompare(a.lastCookedAt)
+    }
+    if (a.lastCookedAt) return -1
+    if (b.lastCookedAt) return 1
+    if (b.timesPlanned !== a.timesPlanned) return b.timesPlanned - a.timesPlanned
+    return a.recipe.title.localeCompare(b.recipe.title)
+  })
+
+  const favorites = all.filter((e) => e.isFavorite)
+  const recentlyCooked = all
+    .filter((e) => e.lastCookedAt !== null)
+    .slice(0, RECENTLY_COOKED_LIMIT)
+
+  return { favorites, recentlyCooked, all }
 }

@@ -276,6 +276,26 @@ export const dishFeedback = pgTable('dish_feedback', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Phase 13 PR-4 — "Dodaj do następnego planu" request queue. A household asks
+// for a specific pool recipe to be offered to the planner; findCandidates force-
+// offers active (un-consumed) requests as must-offer candidates — but ONLY if
+// they pass the allergen HARD CONSTRAINT (the allergen filter is never bypassed).
+// consumedByPlanId is stamped when a plan that included the recipe is generated.
+export const recipeRequests = pgTable('recipe_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  recipeId: uuid('recipe_id')
+    .notNull()
+    .references(() => recipes.id, { onDelete: 'cascade' }),
+  // Null until a generated plan fulfills the request; set to that plan's id.
+  consumedByPlanId: uuid('consumed_by_plan_id').references(() => weeklyPlans.id, {
+    onDelete: 'set null',
+  }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const promotionFacts = pgTable('promotion_facts', {
   id: uuid('id').primaryKey().defaultRandom(),
   retailer: text('retailer').notNull(),
@@ -388,6 +408,21 @@ export const shoppingListItemsRelations = relations(shoppingListItems, ({ one })
   }),
 }))
 
+export const recipeRequestsRelations = relations(recipeRequests, ({ one }) => ({
+  household: one(households, {
+    fields: [recipeRequests.householdId],
+    references: [households.id],
+  }),
+  recipe: one(recipes, {
+    fields: [recipeRequests.recipeId],
+    references: [recipes.id],
+  }),
+  consumedByPlan: one(weeklyPlans, {
+    fields: [recipeRequests.consumedByPlanId],
+    references: [weeklyPlans.id],
+  }),
+}))
+
 export const dishFeedbackRelations = relations(dishFeedback, ({ one }) => ({
   household: one(households, {
     fields: [dishFeedback.householdId],
@@ -431,3 +466,5 @@ export type AnalyticsEvent = typeof analyticsEvents.$inferSelect
 export type NewAnalyticsEvent = typeof analyticsEvents.$inferInsert
 export type PushToken = typeof pushTokens.$inferSelect
 export type NewPushToken = typeof pushTokens.$inferInsert
+export type RecipeRequest = typeof recipeRequests.$inferSelect
+export type NewRecipeRequest = typeof recipeRequests.$inferInsert

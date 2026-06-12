@@ -17,5 +17,14 @@ export const GET = withAuth<RouteContext>(async (_req, { params, user }) => {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  return Response.json({ recipe })
+  // Phase 13 PR-4: per-household context for the heart toggle + "add to next
+  // plan" button on W02. Additive — existing callers read `recipe` only.
+  const [isFavorite, isRequested] = householdId
+    ? await Promise.all([
+        recipeService.isFavorite(householdId, recipeId),
+        recipeService.isRecipeRequested(householdId, recipeId),
+      ])
+    : [false, false]
+
+  return Response.json({ recipe, isFavorite, isRequested })
 })

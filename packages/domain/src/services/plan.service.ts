@@ -233,8 +233,15 @@ async function generatePlanFromPool(
   context: PlanGenerationContext,
   dayCount: number,
 ): Promise<PlanWithMeals> {
+  // Phase 13 PR-4: dishes the family queued via "Dodaj do następnego planu".
+  // They are force-offered (must-offer) but still subject to the allergen
+  // HARD-CONSTRAINT filter inside findCandidates — never bypassed.
+  const requestedRecipeIds = await recipeService.getActiveRequestRecipeIds(
+    input.householdId,
+  );
   const candidates = await recipeService.findCandidates(input.householdId, {
     limit: 50,
+    mustOfferRecipeIds: requestedRecipeIds,
   });
   // Need a real choice for every slot; otherwise let the ad-hoc path handle it.
   const minCandidates = Math.max(20, dayCount * 2);
@@ -303,6 +310,20 @@ async function generatePlanFromPool(
       .returning();
     if (!mealRow) throw new Error("Failed to insert planned_meal row");
     insertedMeals.push(mealRow);
+  }
+
+  // Phase 13 PR-4: mark the family's requests fulfilled for any requested dish
+  // that actually landed in the plan. Requests that the AI could not place
+  // (e.g. dropped by the allergen filter) stay active for the next plan.
+  const fulfilledRequests = requestedRecipeIds.filter((id) =>
+    selectedIds.includes(id),
+  );
+  if (fulfilledRequests.length > 0) {
+    await recipeService.markRequestsConsumed(
+      input.householdId,
+      fulfilledRequests,
+      planRow.id,
+    );
   }
 
   await analyticsService.trackEvent(input.householdId, null, "plan_generated", {

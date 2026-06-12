@@ -74,11 +74,11 @@ void Text;
 import TabsLayout from '../../app/(tabs)/_layout';
 
 describe('tab navigation', () => {
-  it('renders the three visible tab labels (Przepisy is hidden)', () => {
-    const { getByText, queryByText } = render(<TabsLayout />);
+  it('renders all four tab labels including the Przepisy cookbook', () => {
+    const { getByText } = render(<TabsLayout />);
     expect(getByText('Plan')).toBeTruthy();
-    // Recipes tab is hidden (href: null) until Phase 3 populates it.
-    expect(queryByText('Przepisy')).toBeNull();
+    // Przepisy is the family cookbook (Phase 13 PR-4) — no longer hidden.
+    expect(getByText('Przepisy')).toBeTruthy();
     expect(getByText('Zakupy')).toBeTruthy();
     expect(getByText('Rodzina')).toBeTruthy();
   });
