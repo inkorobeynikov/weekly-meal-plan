@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,7 +22,6 @@ import type { MealType } from '@meal-planner/shared';
 
 import {
   approvePlan,
-  generatePlan,
   getHousehold,
   getWeeklyPlan,
   type MealWithRecipe,
@@ -35,6 +35,7 @@ import {
   RecipeSwapSheet,
   type SwapMealRef,
 } from '../../../src/components/RecipeSwapSheet';
+import { usePlanGeneration } from '../../../src/lib/usePlanGeneration';
 
 // W04 — Plan Review.
 //
@@ -112,11 +113,15 @@ export default function PlanReviewScreen(): React.JSX.Element {
   const [plan, setPlan] = useState<PlanWithMealsAndRecipes | null>(null);
   const [allergies, setAllergies] = useState<string[]>([]);
   const [approving, setApproving] = useState<boolean>(false);
-  const [generating, setGenerating] = useState<boolean>(false);
+  const [approved, setApproved] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const [swapMeal, setSwapMeal] = useState<SwapMealRef | null>(null);
   const [swapVisible, setSwapVisible] = useState<boolean>(false);
+
+  // Track the id of the loaded draft so regeneration can detect a NEW plan
+  // (different id) rather than returning the stale draft (F1 item 2).
+  const currentPlanIdRef = useRef<string | null>(null);
 
   const loadPlan = useCallback(async (): Promise<void> => {
     setError(null);
@@ -126,7 +131,9 @@ export default function PlanReviewScreen(): React.JSX.Element {
         getHousehold().catch(() => null),
       ]);
       // A plan with no meals is treated as "no plan" for the empty state.
-      setPlan(planRes && planRes.meals.length > 0 ? planRes : null);
+      const next = planRes && planRes.meals.length > 0 ? planRes : null;
+      setPlan(next);
+      currentPlanIdRef.current = next?.plan.id ?? null;
       setAllergies(family?.preferences?.allergies ?? []);
     } catch {
       setError('Nie udało się wczytać planu.');
@@ -138,6 +145,17 @@ export default function PlanReviewScreen(): React.JSX.Element {
   useEffect(() => {
     void loadPlan();
   }, [loadPlan]);
+
+  // Shared generate + poll pattern (F1). "Wygeneruj nowy" must wait for a
+  // genuinely new draft (different id), not re-fetch the stale one instantly.
+  const generation = usePlanGeneration({
+    isReady: (p) =>
+      p.meals.length > 0 && p.plan.id !== currentPlanIdRef.current,
+    onReady: (p) => {
+      setPlan(p);
+      currentPlanIdRef.current = p.plan.id;
+    },
+  });
 
   // ⚠️ HARD CONSTRAINT: allergies are non-negotiable. Any conflict blocks
   // approval and surfaces a prominent warning banner.
@@ -159,7 +177,10 @@ export default function PlanReviewScreen(): React.JSX.Element {
     setError(null);
     try {
       await approvePlan(plan.plan.id);
-      router.replace('/(tabs)/plan');
+      // Approval enqueues shopping-list generation server-side. Show a
+      // confirmation (with a link to the Zakupy tab) rather than bouncing the
+      // user straight back to the plan.
+      setApproved(true);
     } catch {
       setError('Nie udało się zatwierdzić planu.');
     } finally {
@@ -168,19 +189,10 @@ export default function PlanReviewScreen(): React.JSX.Element {
   }
 
   async function handleGenerate(): Promise<void> {
-    if (generating) return;
-    setGenerating(true);
+    if (generation.generating) return;
     setError(null);
-    try {
-      await generatePlan();
-      // Re-fetch after enqueueing; the new draft may not be ready instantly,
-      // but reload reflects whatever the backend currently has.
-      await loadPlan();
-    } catch {
-      setError('Nie udało się wygenerować planu.');
-    } finally {
-      setGenerating(false);
-    }
+    generation.reset();
+    await generation.start();
   }
 
   function openSwap(planId: string, m: MealWithRecipe, dayLabel: string): void {
@@ -201,6 +213,42 @@ export default function PlanReviewScreen(): React.JSX.Element {
   }
 
   // --- render ----------------------------------------------------------------
+
+  // Post-approval confirmation: the shopping list is generated asynchronously,
+  // so tell the user and offer a direct link into the Zakupy tab (F1 item 5).
+  if (approved) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View testID="review-approved" style={styles.confirmWrap}>
+          <View style={styles.confirmIcon}>
+            <Ionicons name="checkmark-circle" size={56} color={tokens.sage} />
+          </View>
+          <Text style={styles.confirmTitle}>Plan zatwierdzony!</Text>
+          <Text style={styles.confirmBody}>
+            Przygotowujemy Twoją listę zakupów. Pojawi się w zakładce Zakupy za
+            chwilę.
+          </Text>
+          <Button
+            onPress={() => router.replace('/(tabs)/shopping')}
+            accessibilityLabel="Przejdź do listy zakupów"
+            testID="review-go-shopping"
+            style={styles.confirmBtn}
+          >
+            Zobacz listę zakupów
+          </Button>
+          <Button
+            variant="secondary"
+            onPress={() => router.replace('/(tabs)/plan')}
+            accessibilityLabel="Wróć do planu"
+            testID="review-back-to-plan"
+            style={styles.confirmBtn}
+          >
+            Wróć do planu
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -242,13 +290,18 @@ export default function PlanReviewScreen(): React.JSX.Element {
                 {error}
               </Text>
             ) : null}
+            {generation.error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {generation.error}
+              </Text>
+            ) : null}
             <Button
-              loading={generating}
+              loading={generation.generating}
               onPress={() => void handleGenerate()}
               accessibilityLabel="Wygeneruj plan"
               testID="review-generate-empty"
             >
-              Wygeneruj plan
+              {generation.generating ? 'Generuję nowy plan…' : 'Wygeneruj plan'}
             </Button>
           </View>
         ) : (
@@ -278,9 +331,21 @@ export default function PlanReviewScreen(): React.JSX.Element {
               </View>
             ) : null}
 
+            {generation.generating ? (
+              <View testID="review-generating-banner" style={styles.genBanner}>
+                <ActivityIndicator size="small" color={tokens.sageInk} />
+                <Text style={styles.genBannerText}>Generuję nowy plan…</Text>
+              </View>
+            ) : null}
+
             {error ? (
               <Text accessibilityRole="alert" style={styles.error}>
                 {error}
+              </Text>
+            ) : null}
+            {generation.error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {generation.error}
               </Text>
             ) : null}
 
@@ -327,13 +392,13 @@ export default function PlanReviewScreen(): React.JSX.Element {
           </Button>
           <Button
             variant="secondary"
-            loading={generating}
+            loading={generation.generating}
             onPress={() => void handleGenerate()}
             accessibilityLabel="Wygeneruj nowy"
             testID="review-generate"
             style={styles.footerBtn}
           >
-            Wygeneruj nowy
+            {generation.generating ? 'Generuję nowy plan…' : 'Wygeneruj nowy'}
           </Button>
         </View>
       ) : null}
@@ -426,6 +491,38 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   error: { fontSize: fontSize.sm, color: tokens.terra },
+  genBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.md,
+    backgroundColor: tokens.sageSoft,
+  },
+  genBannerText: { fontSize: fontSize.sm, fontWeight: '700', color: tokens.sageInk },
+  confirmWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing['2xl'],
+    gap: spacing.md,
+  },
+  confirmIcon: { marginBottom: spacing.sm },
+  confirmTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: '700',
+    color: tokens.ink,
+    textAlign: 'center',
+  },
+  confirmBody: {
+    fontSize: fontSize.base,
+    color: tokens.muted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  confirmBtn: { alignSelf: 'stretch', marginTop: spacing.sm },
   footer: {
     flexDirection: 'row',
     gap: spacing.md,

@@ -170,6 +170,14 @@ describe('Plan review (W04)', () => {
 
     fireEvent.press(approveBtn);
     await waitFor(() => expect(mockApprovePlan).toHaveBeenCalledWith('plan1'));
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)/plan'));
+
+    // After approval we show a confirmation (shopping list is generating async),
+    // not an immediate bounce back to the plan.
+    await waitFor(() => expect(getByLabelText('Przejdź do listy zakupów')).toBeTruthy());
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    // The Zakupy link navigates to the shopping tab.
+    fireEvent.press(getByLabelText('Przejdź do listy zakupów'));
+    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/shopping');
   });
 });

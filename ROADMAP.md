@@ -98,6 +98,17 @@
 - [x] `getWeekTwoRetentionCandidates()` now selects households with ≥1 push token (was `telegramChatId IS NOT NULL`)
 - [x] Verified: `pnpm typecheck` green across all 9 packages; ui-native + mobile (13 suites/41) tests pass
 
+## F1 — Weekly loop & async generation fixes ✅ done
+
+- [x] Shared async plan-generation pattern (`usePlanGeneration` hook): generate → poll `getWeeklyPlan` every 8s with a hard ceiling (~15 polls / ~2 min). On timeout it switches to an explicit error + "Spróbuj ponownie" action instead of polling forever. Reused across plan, review and shopping screens
+- [x] W04 "Wygeneruj nowy" now waits for a genuinely NEW draft (different plan id) via the poll pattern with a "Generuję nowy plan…" state — no longer returns the stale draft instantly
+- [x] W08 "Rozpocznij nowy tydzień" routes the user to weekly feedback (W09) for the finishing plan FIRST, then triggers generation via the poll pattern, surfacing any error (no silent catch)
+- [x] W09 feedback reachable in-app: end-of-week CTA on the approved plan screen + the new-week flow; `submitFeedback` guarded when `planId === null`; added a "Wróć do planu" button on the success state (was a dead-end)
+- [x] W04 post-approve confirmation ("Plan zatwierdzony! — lista zakupów się generuje") with a direct link to the Zakupy tab + "Wróć do planu"
+- [x] W01 day cards: swap affordance opens the existing `RecipeSwapSheet`; feedback entry point added
+- [x] W03 shopping housekeeping: checkbox now toggles bought ⇄ pending (un-check), grouped list wrapped in a `ScrollView`, manual items get a category picker + per-row delete. New `DELETE /api/shopping/items/:itemId` route (thin + Zod + `withAuth`) backed by `shoppingService.deleteItem`
+- [x] Verified: `pnpm typecheck` green across all 9 packages; mobile Jest 13 suites / 44 tests pass
+
 ## Phase 13 — Recipe library (scrape → rewrite → pool-based plans)
 
 > Replace "AI invents recipes from scratch" with "AI selects from a curated pool of real

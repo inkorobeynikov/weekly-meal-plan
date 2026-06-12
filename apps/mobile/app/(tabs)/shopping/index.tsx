@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -16,12 +24,13 @@ import type { ItemStatus } from '@meal-planner/shared';
 
 import {
   addShoppingItem,
-  apiFetch,
+  deleteShoppingItem,
   getShoppingList,
   updateShoppingItem,
   type ShoppingListItem,
   type ShoppingListWithItems,
 } from '@/lib/api';
+import { usePlanGeneration } from '@/lib/usePlanGeneration';
 
 // ---------------------------------------------------------------------------
 // Pricing: the backend `ShoppingListItem` does not (yet) carry an estimated
@@ -161,6 +170,11 @@ export default function ShoppingScreen(): React.JSX.Element {
 
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState('');
+  // Category chosen for a manually added item (defaults to "Inne").
+  const [draftCategory, setDraftCategory] = useState<GroupKey>('Inne');
+
+  // Shared async generation pattern for "Rozpocznij nowy tydzień" (F1 item 3).
+  const generation = usePlanGeneration();
 
   const fetchList = useCallback(async (): Promise<void> => {
     setState('loading');
@@ -188,15 +202,16 @@ export default function ShoppingScreen(): React.JSX.Element {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, status } : it)));
   }, []);
 
-  // Optimistic check → 'bought'; revert on failure.
+  // Optimistic toggle bought ⇄ pending; revert on failure. The checkbox works
+  // both ways so a mistakenly checked item can be un-checked.
   const handleCheck = useCallback(
     async (item: ShoppingListItem): Promise<void> => {
-      if (item.status === 'bought') return;
       const previous = item.status;
+      const next: ItemStatus = item.status === 'bought' ? 'pending' : 'bought';
       setRowError(null);
-      setItemStatus(item.id, 'bought');
+      setItemStatus(item.id, next);
       try {
-        await updateShoppingItem(item.id, 'bought');
+        await updateShoppingItem(item.id, next);
       } catch {
         setItemStatus(item.id, previous);
         setRowError('Nie udało się zaktualizować produktu. Spróbuj ponownie.');
@@ -226,6 +241,7 @@ export default function ShoppingScreen(): React.JSX.Element {
     const name = draftName.trim();
     if (!name || !list) return;
 
+    const category = draftCategory;
     // Optimistic local append with a temporary id.
     const tempId = `temp-${Date.now()}`;
     const optimistic: ShoppingListItem = {
@@ -233,7 +249,7 @@ export default function ShoppingScreen(): React.JSX.Element {
       shoppingListId: list.list.id,
       name,
       normalizedName: name.toLowerCase(),
-      category: 'Inne',
+      category,
       quantity: '1',
       unit: null,
       neededByDate: null,
@@ -245,28 +261,58 @@ export default function ShoppingScreen(): React.JSX.Element {
     };
     setItems((prev) => [...prev, optimistic]);
     setDraftName('');
+    setDraftCategory('Inne');
     setAdding(false);
     setRowError(null);
 
     try {
-      const created = await addShoppingItem(list.list.id, { name });
+      const created = await addShoppingItem(list.list.id, { name, category });
       setItems((prev) => prev.map((it) => (it.id === tempId ? created : it)));
     } catch {
       // Revert the optimistic append.
       setItems((prev) => prev.filter((it) => it.id !== tempId));
       setRowError('Nie udało się dodać produktu. Spróbuj ponownie.');
     }
-  }, [draftName, list]);
+  }, [draftName, draftCategory, list]);
 
+  // Optimistic delete; revert on failure. Used to remove a row (e.g. a
+  // manually added item that is no longer needed).
+  const handleDelete = useCallback(
+    async (item: ShoppingListItem): Promise<void> => {
+      setRowError(null);
+      // Skip server call for optimistic-only temp rows (not yet persisted).
+      if (item.id.startsWith('temp-')) {
+        setItems((prev) => prev.filter((it) => it.id !== item.id));
+        return;
+      }
+      const snapshot = items;
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+      try {
+        await deleteShoppingItem(item.id);
+      } catch {
+        setItems(snapshot);
+        setRowError('Nie udało się usunąć produktu. Spróbuj ponownie.');
+      }
+    },
+    [items],
+  );
+
+  // "Rozpocznij nowy tydzień": close the loop properly. First send the user to
+  // the weekly feedback screen (W09) for the finishing plan, THEN kick off
+  // generation of the next plan via the shared poll pattern, surfacing any error
+  // (no silent swallow). The new plan is picked up on the Plan screen's poll.
   const handleStartNewWeek = useCallback(async (): Promise<void> => {
-    try {
-      // TODO: backend route — no "start new week" REST endpoint yet.
-      await apiFetch<unknown>('/api/plans/generate', { method: 'POST', body: null });
-    } catch {
-      // Non-fatal: fall through to navigation regardless.
+    const finishingPlanId = list?.list.weeklyPlanId ?? null;
+    if (finishingPlanId) {
+      router.push({
+        pathname: '/feedback/[planId]',
+        params: { planId: finishingPlanId },
+      });
     }
-    router.replace('/(tabs)/plan');
-  }, []);
+    setRowError(null);
+    generation.reset();
+    await generation.start();
+  }, [list, generation]);
 
   const groups = useMemo(() => groupItems(items), [items]);
   const boughtCount = useMemo(() => items.filter((it) => it.status === 'bought').length, [items]);
@@ -354,7 +400,14 @@ export default function ShoppingScreen(): React.JSX.Element {
 
   // ----- W08 celebration ---------------------------------------------------
   if (allBought) {
-    return <Celebration onShare={handleShare} onNewWeek={() => void handleStartNewWeek()} />;
+    return (
+      <Celebration
+        onShare={handleShare}
+        onNewWeek={() => void handleStartNewWeek()}
+        starting={generation.generating}
+        error={generation.error}
+      />
+    );
   }
 
   // ----- W03 list ----------------------------------------------------------
@@ -386,7 +439,11 @@ export default function ShoppingScreen(): React.JSX.Element {
           {rowError ? <Text style={styles.rowError}>{rowError}</Text> : null}
         </View>
 
-        <View style={styles.listScroll}>
+        <ScrollView
+          style={styles.listScroll}
+          contentContainerStyle={styles.listScrollBody}
+          showsVerticalScrollIndicator={false}
+        >
           {groups.map((group) => (
             <View key={group.key} style={styles.group}>
               <View style={styles.groupHeaderRow}>
@@ -403,6 +460,7 @@ export default function ShoppingScreen(): React.JSX.Element {
                     last={idx === group.items.length - 1}
                     onCheck={() => void handleCheck(item)}
                     onNotFound={() => void handleNotFound(item)}
+                    onDelete={() => void handleDelete(item)}
                   />
                 ))}
               </Card>
@@ -411,25 +469,49 @@ export default function ShoppingScreen(): React.JSX.Element {
 
           {/* inline add */}
           {adding ? (
-            <View style={styles.addRow}>
-              <TextInput
-                testID="shopping-add-input"
-                value={draftName}
-                onChangeText={setDraftName}
-                placeholder="Nazwa produktu"
-                placeholderTextColor={tokens.faint}
-                style={styles.addInput}
-                autoFocus
-                accessibilityLabel="Nazwa produktu"
-                onSubmitEditing={() => void handleAdd()}
-                returnKeyType="done"
-              />
-              <Button testID="shopping-add-confirm" size="sm" onPress={() => void handleAdd()}>
-                Dodaj
-              </Button>
+            <View style={styles.addBlock}>
+              <View style={styles.addRow}>
+                <TextInput
+                  testID="shopping-add-input"
+                  value={draftName}
+                  onChangeText={setDraftName}
+                  placeholder="Nazwa produktu"
+                  placeholderTextColor={tokens.faint}
+                  style={styles.addInput}
+                  autoFocus
+                  accessibilityLabel="Nazwa produktu"
+                  onSubmitEditing={() => void handleAdd()}
+                  returnKeyType="done"
+                />
+                <Button testID="shopping-add-confirm" size="sm" onPress={() => void handleAdd()}>
+                  Dodaj
+                </Button>
+              </View>
+              <View style={styles.categoryRow}>
+                {GROUP_ORDER.map((cat) => {
+                  const on = cat === draftCategory;
+                  return (
+                    <Pressable
+                      key={cat}
+                      testID={`shopping-category-${cat}`}
+                      onPress={() => setDraftCategory(cat)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Kategoria: ${cat}`}
+                      accessibilityState={{ selected: on }}
+                      style={[styles.categoryChip, on && styles.categoryChipOn]}
+                    >
+                      <Text
+                        style={[styles.categoryChipText, on && styles.categoryChipTextOn]}
+                      >
+                        {cat}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
-        </View>
+        </ScrollView>
 
         {/* Sticky footer */}
         <View style={styles.footer}>
@@ -463,9 +545,10 @@ interface ItemRowProps {
   last: boolean;
   onCheck: () => void;
   onNotFound: () => void;
+  onDelete: () => void;
 }
 
-function ItemRow({ item, last, onCheck, onNotFound }: ItemRowProps): React.JSX.Element {
+function ItemRow({ item, last, onCheck, onNotFound, onDelete }: ItemRowProps): React.JSX.Element {
   const checked = item.status === 'bought';
   const notFound = item.status === 'not_found';
   const price = itemPriceZl(item);
@@ -519,6 +602,17 @@ function ItemRow({ item, last, onCheck, onNotFound }: ItemRowProps): React.JSX.E
           color={notFound ? tokens.muted : tokens.terra}
         />
       </Pressable>
+
+      <Pressable
+        testID={`shopping-delete-${item.id}`}
+        onPress={onDelete}
+        accessibilityRole="button"
+        accessibilityLabel={`Usuń: ${item.name}`}
+        hitSlop={6}
+        style={styles.deleteBtn}
+      >
+        <Ionicons name="trash-outline" size={18} color={tokens.muted} />
+      </Pressable>
     </View>
   );
 }
@@ -530,9 +624,11 @@ function ItemRow({ item, last, onCheck, onNotFound }: ItemRowProps): React.JSX.E
 interface CelebrationProps {
   onShare: () => void;
   onNewWeek: () => void;
+  starting: boolean;
+  error: string | null;
 }
 
-function Celebration({ onShare, onNewWeek }: CelebrationProps): React.JSX.Element {
+function Celebration({ onShare, onNewWeek, starting, error }: CelebrationProps): React.JSX.Element {
   const Confetti = useRef<ConfettiComponent | null>(loadConfetti()).current;
 
   return (
@@ -546,10 +642,21 @@ function Celebration({ onShare, onNewWeek }: CelebrationProps): React.JSX.Elemen
           Świetna robota — cała lista odhaczona. Czas gotować!
         </Text>
 
+        {error ? (
+          <Text testID="shopping-new-week-error" style={styles.rowError}>
+            {error}
+          </Text>
+        ) : null}
+
         <View style={styles.celebrateActions}>
           <Button testID="shopping-share" onPress={onShare}>Udostępnij listę</Button>
-          <Button testID="shopping-new-week" variant="secondary" onPress={onNewWeek}>
-            Rozpocznij nowy tydzień
+          <Button
+            testID="shopping-new-week"
+            variant="secondary"
+            loading={starting}
+            onPress={onNewWeek}
+          >
+            {starting ? 'Rozpoczynam…' : 'Rozpocznij nowy tydzień'}
           </Button>
         </View>
       </View>
@@ -615,7 +722,13 @@ const styles = StyleSheet.create({
   rowError: { fontSize: fontSize.xs, color: tokens.terraInk, fontWeight: '600' },
 
   // list
-  listScroll: { flex: 1, paddingHorizontal: spacing['2xl'], paddingTop: spacing.md, gap: spacing.lg },
+  listScroll: { flex: 1 },
+  listScrollBody: {
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
+  },
   group: { gap: spacing.sm },
   groupHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
   groupHeader: { fontSize: fontSize.sm, fontWeight: '700', color: tokens.ink },
@@ -651,9 +764,23 @@ const styles = StyleSheet.create({
   },
   notFoundBadgeText: { fontSize: fontSize.xs, color: tokens.terraInk, fontWeight: '700' },
   notFoundBtn: { padding: spacing.xs },
+  deleteBtn: { padding: spacing.xs },
 
   // add
+  addBlock: { gap: spacing.sm },
   addRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  categoryChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: tokens.line2,
+    backgroundColor: tokens.surface,
+  },
+  categoryChipOn: { backgroundColor: tokens.sageSoft, borderColor: tokens.sage },
+  categoryChipText: { fontSize: fontSize.xs, fontWeight: '600', color: tokens.muted },
+  categoryChipTextOn: { color: tokens.sageInk },
   addInput: {
     flex: 1,
     backgroundColor: tokens.surface,
